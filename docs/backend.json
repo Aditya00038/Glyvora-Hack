@@ -1,0 +1,121 @@
+
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "type": "object",
+      "description": "User personalization settings and profile data.",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "firstName": { "type": "string" },
+        "sensitivitySetting": { "type": "string", "enum": ["low", "medium", "high"] },
+        "lastMeasuredGlucose": { "type": "number" },
+        "lastMeasuredAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "sensitivitySetting"]
+    },
+    "Meal": {
+      "title": "Meal",
+      "type": "object",
+      "description": "Analyzed meal data including AI predictions and feedback.",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "mealImageUrl": { "type": "string", "format": "uri" },
+        "detectedFoodItems": { "type": "array", "items": { "type": "string" } },
+        "initialPredictedGlucoseSpike": { "type": "number" },
+        "initialRiskLevel": { "type": "string" },
+        "scannedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "initialPredictedGlucoseSpike"]
+    },
+    "MealPlan": {
+      "title": "MealPlan",
+      "type": "object",
+      "description": "AI-generated weekly nutrition plan.",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "startDate": { "type": "string", "format": "date" },
+        "days": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "dayName": { "type": "string" },
+              "meals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string" },
+                    "name": { "type": "string" },
+                    "description": { "type": "string" },
+                    "estimatedSpike": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "generatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "days", "generatedAt"]
+    },
+    "GlucoseLog": {
+      "title": "GlucoseLog",
+      "type": "object",
+      "description": "Standardized glucose readings (manual or OCR).",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "value": { "type": "number" },
+        "unit": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "value", "timestamp"]
+    }
+  },
+  "auth": {
+    "providers": ["password", "anonymous"]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "UserProfile",
+          "schema": { "$ref": "#/backend/entities/UserProfile" },
+          "description": "Private user profile data."
+        }
+      },
+      {
+        "path": "/users/{userId}/meals/{mealId}",
+        "definition": {
+          "entityName": "Meal",
+          "schema": { "$ref": "#/backend/entities/Meal" },
+          "description": "Historical meal scans."
+        }
+      },
+      {
+        "path": "/users/{userId}/mealPlans/{planId}",
+        "definition": {
+          "entityName": "MealPlan",
+          "schema": { "$ref": "#/backend/entities/MealPlan" },
+          "description": "AI-generated metabolic meal plans."
+        }
+      },
+      {
+        "path": "/users/{userId}/glucoseLogs/{logId}",
+        "definition": {
+          "entityName": "GlucoseLog",
+          "schema": { "$ref": "#/backend/entities/GlucoseLog" },
+          "description": "Standalone glucose measurements."
+        }
+      }
+    ]
+  }
+}
