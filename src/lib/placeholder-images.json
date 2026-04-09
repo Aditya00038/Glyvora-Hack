@@ -1,0 +1,16 @@
+{
+  "placeholderImages": [
+    {
+      "id": "hero-meal",
+      "description": "A healthy balanced meal with salmon and vegetables",
+      "imageUrl": "https://picsum.photos/seed/123/1200/800",
+      "imageHint": "healthy meal"
+    },
+    {
+      "id": "app-screenshot-1",
+      "description": "Glyvora app scanning a meal",
+      "imageUrl": "https://picsum.photos/seed/456/600/400",
+      "imageHint": "mobile health"
+    }
+  ]
+}
