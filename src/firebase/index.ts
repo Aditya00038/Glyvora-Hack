@@ -9,15 +9,21 @@ import { getStorage } from 'firebase/storage';
 // IMPORTANT: DO NOT MODIFY THIS FUNCTION
 export function initializeFirebase() {
   if (!getApps().length) {
-    let firebaseApp;
-    try {
-      firebaseApp = initializeApp();
-    } catch (e) {
-      if (process.env.NODE_ENV === "production") {
-        console.warn('Automatic initialization failed. Falling back to firebase config object.', e);
-      }
-      firebaseApp = initializeApp(firebaseConfig);
+    const requiredKeys: Array<keyof typeof firebaseConfig> = [
+      'projectId',
+      'appId',
+      'apiKey',
+      'authDomain',
+      'messagingSenderId',
+      'storageBucket',
+    ];
+
+    const missing = requiredKeys.filter((key) => !firebaseConfig[key]);
+    if (missing.length) {
+      throw new Error(`Firebase config is incomplete. Missing: ${missing.join(', ')}`);
     }
+
+    const firebaseApp = initializeApp(firebaseConfig);
 
     return getSdks(firebaseApp);
   }

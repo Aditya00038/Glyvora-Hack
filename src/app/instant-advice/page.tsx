@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Navigation } from '@/components/Navigation';
@@ -42,7 +42,7 @@ const featureOptions: Array<{ key: FeatureKey; label: string; icon: typeof Bot }
   { key: 'household', label: 'Household', icon: Users },
 ];
 
-export default function InstantAdvicePage() {
+function InstantAdviceContent() {
   const auth = useAuth();
   const firestore = useFirestore();
   const searchParams = useSearchParams();
@@ -288,5 +288,13 @@ export default function InstantAdvicePage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function InstantAdvicePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#F5F3F0]" />}>
+      <InstantAdviceContent />
+    </Suspense>
   );
 }
