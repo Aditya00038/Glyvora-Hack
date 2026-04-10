@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BookOpen,
@@ -18,7 +19,6 @@ import {
   TrendingUp,
   Users,
   X,
-  Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -100,8 +100,8 @@ export function Navigation() {
   const sidebar = (
     <div className="flex h-full flex-col bg-white px-3 py-4">
       <Link href="/dashboard" onClick={handleNavClick} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
-          <Zap className="h-4 w-4" fill="currentColor" />
+        <div className="relative h-9 w-9 overflow-hidden rounded-xl shadow-sm">
+          <Image src="/Glyvora-icon.png" alt="Glyvora logo" fill className="object-cover" sizes="36px" />
         </div>
         <div>
           <p className="text-sm font-semibold tracking-tight text-slate-900">GLYVORA</p>
@@ -171,8 +171,8 @@ export function Navigation() {
 
       <div className="fixed left-0 top-0 z-50 flex h-14 w-full items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur lg:hidden">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-white">
-            <Zap className="h-4 w-4" fill="currentColor" />
+          <div className="relative h-8 w-8 overflow-hidden rounded-xl">
+            <Image src="/Glyvora-icon.png" alt="Glyvora logo" fill className="object-cover" sizes="32px" />
           </div>
           <span className="text-sm font-semibold text-slate-900">GLYVORA</span>
         </Link>

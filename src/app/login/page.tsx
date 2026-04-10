@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Heart, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/firebase';
@@ -69,8 +70,8 @@ export default function LoginPage() {
 
       <Card className="w-full max-w-[520px] rounded-[28px] border border-slate-200 bg-white/95 p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur">
         <div className="flex flex-col items-center text-center">
-          <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-md">
-            <Heart className="h-7 w-7 text-white" fill="currentColor" />
+          <div className="relative mb-6 h-14 w-14 overflow-hidden rounded-full shadow-md">
+            <Image src="/Glyvora-icon.png" alt="Glyvora logo" fill className="object-cover" sizes="56px" priority />
           </div>
 
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Log in to your GLYVORA account</h1>
@@ -88,8 +89,13 @@ export default function LoginPage() {
             {googleLoading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
-              <span className="mr-3 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[14px] font-semibold leading-none text-[#4285F4] shadow-sm ring-1 ring-slate-200">
-                G
+              <span className="mr-3 inline-flex h-5 w-5 items-center justify-center">
+                <svg viewBox="0 0 48 48" className="h-5 w-5" aria-hidden="true">
+                  <path fill="#EA4335" d="M24 9.5c3.2 0 6.1 1.1 8.3 3.2l6.2-6.2C34.8 3.1 29.7 1 24 1 14.6 1 6.5 6.4 2.6 14.3l7.9 6.1C12.2 14.1 17.7 9.5 24 9.5z" />
+                  <path fill="#4285F4" d="M46.5 24.5c0-1.7-.1-3.3-.4-4.9H24v9.3h12.7c-.6 3-2.3 5.5-4.9 7.2l7.6 5.9c4.4-4.1 7.1-10.1 7.1-17.5z" />
+                  <path fill="#FBBC05" d="M10.5 28.6c-.5-1.5-.8-3-.8-4.6 0-1.6.3-3.1.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.6 10.7l7.9-6.1z" />
+                  <path fill="#34A853" d="M24 47c6.5 0 12-2.2 16-5.9l-7.6-5.9c-2.1 1.4-4.8 2.3-8.4 2.3-6.3 0-11.8-4.6-13.7-10.8l-7.9 6.1C6.5 41.6 14.6 47 24 47z" />
+                </svg>
               </span>
             )}
             Continue with Google

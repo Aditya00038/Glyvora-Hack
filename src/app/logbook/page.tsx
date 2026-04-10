@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFirestore, useUser } from '@/firebase';
-import { addDoc, collection, getDocs } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import {
   Activity,
   Calendar,
@@ -277,6 +277,37 @@ export default function LogbookPage() {
         ...payload,
         createdAt: new Date().toISOString(),
       });
+
+      if (activeTab === 'glucose') {
+        try {
+          const profileSnap = await getDoc(doc(firestore, 'users', user.uid));
+          const profile = profileSnap.exists() ? (profileSnap.data() as any) : {};
+          const phoneNumber = String(profile.phoneNumber || '').trim();
+          const smsEnabled = profile.smsEnabled !== false;
+          const lowThreshold = Number(profile.glucoseLowThreshold ?? 70);
+          const highThreshold = Number(profile.glucoseHighThreshold ?? 140);
+          const glucoseReadingMgDl = Number(form.glucoseValue) * 18;
+
+          if (phoneNumber && smsEnabled && Number.isFinite(glucoseReadingMgDl)) {
+            if (glucoseReadingMgDl <= lowThreshold || glucoseReadingMgDl >= highThreshold) {
+              const alertType = glucoseReadingMgDl <= lowThreshold ? 'LOW' : 'HIGH';
+              const message = `GLYVORA alert: Your glucose reading is ${Math.round(glucoseReadingMgDl)} mg/dL, which is ${alertType.toLowerCase()} (${glucoseReadingMgDl <= lowThreshold ? `<= ${lowThreshold}` : `>= ${highThreshold}`} mg/dL). Please take care and monitor your levels.`;
+
+              await fetch('/api/notifications/welcome', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  to: phoneNumber,
+                  name: profile.displayName || profile.firstName || user.displayName || 'there',
+                  message,
+                }),
+              });
+            }
+          }
+        } catch (smsError) {
+          console.error('Failed to send glucose alert SMS:', smsError);
+        }
+      }
 
       console.log('Entry created successfully:', docRef.id);
       toast({ title: 'Entry added', description: 'Your logbook entry has been saved.' });

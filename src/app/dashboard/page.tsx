@@ -8,13 +8,14 @@ import { useUser } from '@/firebase';
 import { Navigation } from '@/components/Navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { HomeBarcodeScannerDialog } from '@/components/HomeBarcodeScannerDialog';
 import {
   Activity,
+  Barcode,
   ChevronRight,
   Clock3,
   HeartPulse,
   MessageCircle,
-  Smartphone,
   Sparkles,
   TrendingUp,
   Utensils,
@@ -164,22 +165,24 @@ export default function DashboardPage() {
                 <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-600">Beta</span>
               </div>
               <h3 className="mt-8 text-[15px] font-semibold leading-tight tracking-tight text-slate-900">Instant advice. Just text.</h3>
-              <p className="mt-2 max-w-sm text-xs text-slate-600">Open Telegram / WhatsApp integration, mobile sync, household, and alerts from one settings page.</p>
+              <p className="mt-2 max-w-sm text-xs text-slate-600">Open messaging integrations, household, and alerts from one settings page.</p>
               <span className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-blue-600 hover:text-blue-700">
                 Manage app <ChevronRight className="h-4 w-4" />
               </span>
             </motion.section>
             </Link>
 
-            <Link href="/settings" className="block">
-            <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex h-full min-h-[250px] flex-col rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_10px_30px_rgba(15,23,42,0.06)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_14px_35px_rgba(15,23,42,0.08)]">
+            <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex h-full min-h-[250px] flex-col rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-600">
-                <Smartphone className="h-5 w-5" />
+                <Barcode className="h-5 w-5" />
               </div>
-              <h3 className="mt-8 text-[15px] font-semibold leading-tight tracking-tight text-slate-900">Mobile Sync</h3>
-              <p className="mt-2 max-w-sm text-xs text-slate-600">Manage all settings from one unified page.</p>
+              <h3 className="mt-8 text-[15px] font-semibold leading-tight tracking-tight text-slate-900">Barcode Scanner</h3>
+              <p className="mt-2 max-w-sm text-xs text-slate-600">Click to scan from photo or upload image, then get calories and health score.</p>
+
+              <div className="mt-4">
+                <HomeBarcodeScannerDialog />
+              </div>
             </motion.section>
-            </Link>
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">

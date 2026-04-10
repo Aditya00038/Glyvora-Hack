@@ -5,6 +5,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const to = body?.to as string | undefined;
     const name = (body?.name as string | undefined) || 'there';
+    const message = (body?.message as string | undefined) || `Welcome to GLYVORA, ${name}! Your account is ready and your wellness journey has started.`;
 
     if (!to) {
       return NextResponse.json({ error: 'Missing phone number' }, { status: 400 });
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
     const payload = new URLSearchParams();
     payload.set('To', to);
     payload.set('From', fromNumber);
-    payload.set('Body', `Welcome to GLYVORA, ${name}! Your account is ready and your wellness journey has started.`);
+    payload.set('Body', message);
 
     const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
       method: 'POST',

@@ -5,16 +5,15 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Zap, MessageCircle, Smartphone, Bell, Users } from 'lucide-react';
+import { Zap, MessageCircle, Bell, Users } from 'lucide-react';
 import { useState } from 'react';
 
-type TabType = 'integrations' | 'mobile' | 'notifications' | 'household';
+type TabType = 'integrations' | 'notifications' | 'household';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('integrations');
   const [telegramHandle, setTelegramHandle] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('+91 98765 43210');
-  const [mobileSyncEnabled, setMobileSyncEnabled] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [householdMembers, setHouseholdMembers] = useState<string[]>([]);
 
@@ -42,16 +41,6 @@ export default function SettingsPage() {
             }`}
           >
             Integrations
-          </button>
-          <button 
-            onClick={() => setActiveTab('mobile')}
-            className={`px-4 py-3 text-[13px] font-medium whitespace-nowrap transition-colors ${
-              activeTab === 'mobile'
-                ? 'text-emerald-600 border-b-2 border-emerald-600'
-                : 'text-slate-600 hover:text-slate-900 border-b-2 border-transparent'
-            }`}
-          >
-            Mobile Sync
           </button>
           <button 
             onClick={() => setActiveTab('notifications')}
@@ -145,49 +134,6 @@ export default function SettingsPage() {
               <Button className="bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg">
                 Save Integrations
               </Button>
-            </>
-          )}
-
-          {/* Mobile Sync Tab */}
-          {activeTab === 'mobile' && (
-            <>
-              <h2 className="text-lg font-semibold">Mobile Sync</h2>
-              <p className="text-sm text-slate-600">Keep your data synchronized across all your devices.</p>
-
-              <Card className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="flex items-center gap-4 mb-6">
-                  <Smartphone className="h-8 w-8 text-emerald-600" />
-                  <div>
-                    <h3 className="text-base font-semibold">Enable Mobile Sync</h3>
-                    <p className="text-sm text-slate-600">Sync your logbook, meal plans, and settings in real-time</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <input 
-                      type="checkbox" 
-                      id="sync-toggle"
-                      checked={mobileSyncEnabled}
-                      onChange={(e) => setMobileSyncEnabled(e.target.checked)}
-                      className="h-5 w-5 rounded accent-emerald-600"
-                    />
-                    <label htmlFor="sync-toggle" className="flex-1 cursor-pointer">
-                      <p className="font-medium text-slate-900">Automatic Sync</p>
-                      <p className="text-sm text-slate-600">Automatically sync changes every 5 minutes</p>
-                    </label>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <p className="font-medium text-slate-900">Last Synced</p>
-                    <p className="text-sm text-slate-600">Just now</p>
-                  </div>
-
-                  <Button className="w-full bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg">
-                    Sync Now
-                  </Button>
-                </div>
-              </Card>
             </>
           )}
 

@@ -8,6 +8,11 @@ import { ThemeProvider } from '@/components/theme-provider';
 export const metadata: Metadata = {
   title: 'Glyvora - Metabolic Decision Engine',
   description: 'AI-powered glucose predictions for Type-2 Diabetics.',
+  icons: {
+    icon: '/Glyvora-icon.png?v=2',
+    shortcut: '/Glyvora-icon.png?v=2',
+    apple: '/Glyvora-icon.png?v=2',
+  },
 };
 
 export default function RootLayout({
@@ -18,6 +23,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="icon" href="/Glyvora-icon.png?v=2" sizes="any" />
+        <link rel="apple-touch-icon" href="/Glyvora-icon.png?v=2" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
