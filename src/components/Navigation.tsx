@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import {
+  ClipboardCheck,
   BookOpen,
   ChevronRight,
   Bell,
@@ -29,9 +30,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useAuth, useUser } from '@/firebase';
+import { useAuth, useFirestore, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useEffect, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
 
 const wellnessItems = [
   { href: '/dashboard', label: 'Home', icon: Home },
@@ -69,8 +71,10 @@ export function Navigation() {
   const pathname = usePathname();
   const { user } = useUser();
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [showCompleteSetup, setShowCompleteSetup] = useState(false);
 
   useEffect(() => {
     setOpen(false);
@@ -85,6 +89,35 @@ export function Navigation() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSetupStatus = async () => {
+      if (!user?.uid) {
+        if (!cancelled) setShowCompleteSetup(false);
+        return;
+      }
+
+      try {
+        const userDoc = await getDoc(doc(firestore, 'users', user.uid));
+        const data = userDoc.data() as { profileCompletedAt?: string } | undefined;
+        if (!cancelled) {
+          setShowCompleteSetup(!data?.profileCompletedAt);
+        }
+      } catch {
+        if (!cancelled) {
+          setShowCompleteSetup(true);
+        }
+      }
+    };
+
+    loadSetupStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, user?.uid]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -119,6 +152,18 @@ export function Navigation() {
         {profileItems.map((item) => (
           <SidebarLink key={item.href} href={item.href} label={item.label} icon={item.icon} active={pathname === item.href} onClick={handleNavClick} />
         ))}
+        {showCompleteSetup ? (
+          <>
+            <div className="my-2 border-t border-slate-200" />
+            <SidebarLink
+              href="/onboarding"
+              label="Complete Setup"
+              icon={ClipboardCheck}
+              active={pathname === '/onboarding'}
+              onClick={handleNavClick}
+            />
+          </>
+        ) : null}
       </div>
 
       <div className="mt-auto pt-5">

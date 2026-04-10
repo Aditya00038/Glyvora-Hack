@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { MessageCircle, Send, Loader2, Sparkles, ChefHat, ShieldAlert, Info } from 'lucide-react';
+import { Send, Loader2, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 
@@ -17,13 +17,6 @@ interface Message {
   text: string;
   timestamp: Date;
 }
-
-const quickPrompts = [
-  'What should I eat tonight for steadier glucose?',
-  'Suggest a meal plan for my day.',
-  'How can I lower my glucose after a meal?',
-  'Explain this app and what Parivartan can do.',
-];
 
 function getCoachResponse(prompt: string) {
   const text = prompt.toLowerCase();
@@ -59,6 +52,7 @@ export default function ParivatanPage() {
     },
   ]);
   const [input, setInput] = useState('');
+  const [preferredLanguage, setPreferredLanguage] = useState('en');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +61,13 @@ export default function ParivatanPage() {
       router.push('/login');
     }
   }, [isUserLoading, router, user]);
+
+  useEffect(() => {
+    const lang = typeof window !== 'undefined' ? localStorage.getItem('glyvora_lang') : null;
+    if (lang) {
+      setPreferredLanguage(lang);
+    }
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -90,7 +91,33 @@ export default function ParivatanPage() {
     setInput('');
     setIsLoading(true);
 
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMessage.text,
+          history: messages.map((m) => ({
+            role: m.type === 'user' ? 'user' : 'assistant',
+            content: m.text,
+          })),
+          userContext: `User: ${displayName}`,
+          preferredLanguage,
+        }),
+      });
+
+      const data = await response.json();
+      const apiReply = typeof data?.reply === 'string' ? data.reply.trim() : '';
+
+      const coachMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        type: 'coach',
+        text: apiReply || getCoachResponse(userMessage.text),
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, coachMessage]);
+    } catch {
       const coachMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'coach',
@@ -99,8 +126,9 @@ export default function ParivatanPage() {
       };
 
       setMessages((prev) => [...prev, coachMessage]);
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
 
   if (isUserLoading || !user) {
@@ -115,70 +143,6 @@ export default function ParivatanPage() {
 
       <main className="px-4 py-4 lg:ml-48 xl:ml-52 lg:px-5 lg:py-3.5">
         <div className="mx-auto max-w-5xl space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-            <Card className="rounded-3xl border border-emerald-200 bg-gradient-to-br from-white via-emerald-50/40 to-teal-50 p-5 shadow-sm">
-              <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
-                <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-emerald-100 bg-white shadow-sm">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white">
-                    <Sparkles className="h-7 w-7" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Parivartan AI Coach</div>
-                  <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Talk to Parivartan</h1>
-                  <p className="max-w-xl text-sm leading-6 text-slate-600">
-                    Ask about food, glucose trends, meal suggestions, app features, reminders, or daily wellness guidance. Parivartan gives practical advice in plain language.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-slate-200 bg-white/80 p-3">
-                  <ChefHat className="h-5 w-5 text-orange-500" />
-                  <p className="mt-2 text-sm font-semibold text-slate-900">Meal ideas</p>
-                  <p className="mt-1 text-xs text-slate-600">Breakfast, lunch, dinner, and snack suggestions.</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white/80 p-3">
-                  <ShieldAlert className="h-5 w-5 text-rose-500" />
-                  <p className="mt-2 text-sm font-semibold text-slate-900">Glucose advice</p>
-                  <p className="mt-1 text-xs text-slate-600">Insights to help you respond to spikes or lows.</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white/80 p-3">
-                  <Info className="h-5 w-5 text-blue-500" />
-                  <p className="mt-2 text-sm font-semibold text-slate-900">App help</p>
-                  <p className="mt-1 text-xs text-slate-600">Learn how logging, settings, and meal planning work.</p>
-                </div>
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                {quickPrompts.map((prompt) => (
-                  <Button
-                    key={prompt}
-                    variant="outline"
-                    className="rounded-full border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
-                    onClick={() => setInput(prompt)}
-                  >
-                    {prompt}
-                  </Button>
-                ))}
-              </div>
-            </Card>
-
-            <Card className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="space-y-3">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Parivartan is ready</h2>
-                  <p className="mt-1 text-sm text-slate-600">Use the chat below to ask for personalized advice and meal suggestions.</p>
-                </div>
-
-                <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Today&apos;s focus</p>
-                  <p className="text-sm text-slate-700">Try asking for a meal suggestion, a glucose recovery plan, or an explanation of your app features.</p>
-                  <p className="text-xs text-slate-500">Parivartan can help with general advice, but it does not replace professional medical guidance.</p>
-                </div>
-              </div>
-            </Card>
-          </div>
 
           <Card className="flex min-h-[620px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-3">

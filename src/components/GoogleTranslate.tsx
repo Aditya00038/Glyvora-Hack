@@ -17,7 +17,7 @@ export function GoogleTranslate() {
         {
           pageLanguage: 'en',
           autoDisplay: false,
-          includedLanguages: 'en,hi,mr,gu,ta,te,kn,ml,bn,pa,ur', // Expanded regional support
+          includedLanguages: 'en,hi,mr,gu,ta,te,kn,ml,bn,pa,ur,or',
         },
         'google_translate_element'
       );

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
@@ -95,6 +96,11 @@ export default function MyMenuPage() {
     fetchPlan();
   }, []);
 
+  useEffect(() => {
+    if (!plan || typeof window === 'undefined') return;
+    window.localStorage.setItem('glyvora_latest_meal_plan', JSON.stringify(plan));
+  }, [plan]);
+
   const regenerateDay = async () => {
     if (!plan) return;
     setRegeneratingDay(true);
@@ -165,6 +171,21 @@ export default function MyMenuPage() {
     popup.print();
   };
 
+  const getMealDescription = (meal: Meal | null) => {
+    if (!meal) return '';
+    const carbsTone = meal.carbs <= 20 ? 'low-carbohydrate' : meal.carbs <= 40 ? 'moderate-carbohydrate' : 'higher-carbohydrate';
+    const proteinTone = meal.protein >= 30 ? 'high-protein' : meal.protein >= 18 ? 'balanced-protein' : 'light-protein';
+    return `A ${proteinTone}, ${carbsTone} ${meal.type.toLowerCase()} designed to support steadier glucose response with practical ingredients.`;
+  };
+
+  const macroPercents = selectedMeal
+    ? {
+        protein: Math.round((selectedMeal.protein * 4 * 100) / Math.max(1, selectedMeal.calories)),
+        carbs: Math.round((selectedMeal.carbs * 4 * 100) / Math.max(1, selectedMeal.calories)),
+        fat: Math.round((selectedMeal.fat * 9 * 100) / Math.max(1, selectedMeal.calories)),
+      }
+    : { protein: 0, carbs: 0, fat: 0 };
+
   return (
     <div className="min-h-screen bg-[#F5F3F0] text-slate-900 pb-10 lg:ml-48 xl:ml-52">
       <Navigation />
@@ -174,19 +195,18 @@ export default function MyMenuPage() {
             <div>
               <div className="mb-2 flex items-center gap-2">
                 <Badge className="bg-emerald-500 text-white">Weekly</Badge>
-                <Badge variant="outline">3 days</Badge>
+                <Badge variant="outline">{plan?.days?.length || 7} days</Badge>
               </div>
-              <h1 className="text-4xl font-semibold tracking-tight">{plan?.title || '3-Day Low Carb Plan'}</h1>
+              <h1 className="text-4xl font-semibold tracking-tight">{plan?.title || '7-Day Glucose-Friendly Plan'}</h1>
               <p className="mt-1 text-sm text-slate-600">AI-generated meal plan tailored to your nutritional needs and preferences.</p>
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" className="rounded-xl" onClick={() => {
-                const list = plan?.groceryList || [];
-                alert(list.map((l) => `${l.item} - ${l.quantity}`).join('\n') || 'No grocery list yet');
-              }}>
-                <ShoppingCart className="mr-2 h-4 w-4" /> Grocery List
-              </Button>
+              <Link href="/grocery-list">
+                <Button variant="outline" className="rounded-xl">
+                  <ShoppingCart className="mr-2 h-4 w-4" /> Grocery List
+                </Button>
+              </Link>
               <Button variant="outline" className="rounded-xl" onClick={printGroceryList}>
                 <Printer className="mr-2 h-4 w-4" /> Print
               </Button>
@@ -265,24 +285,70 @@ export default function MyMenuPage() {
         <Dialog open={!!selectedMeal} onOpenChange={(o) => !o && setSelectedMeal(null)}>
           <DialogContent className="max-w-2xl rounded-2xl">
             <DialogHeader>
-              <DialogTitle className="text-2xl">{selectedMeal?.name}</DialogTitle>
+              <DialogTitle className="text-2xl">🍽️ {selectedMeal?.name}</DialogTitle>
+              <p className="text-sm text-slate-500">{selectedMeal?.type} · {selectedMeal?.minutes} minutes</p>
             </DialogHeader>
-            <div className="space-y-4 text-sm">
+
+            <div className="space-y-5 text-sm">
               <div>
-                <h4 className="mb-2 font-semibold">Ingredients</h4>
+                <h4 className="mb-1 text-xl font-semibold text-slate-900">Description</h4>
+                <p className="text-slate-600 leading-relaxed">{getMealDescription(selectedMeal)}</p>
+              </div>
+
+              <div>
+                <h4 className="mb-2 text-xl font-semibold text-slate-900">Ingredients</h4>
                 <ul className="list-disc pl-5 text-slate-700">
                   {(selectedMeal?.ingredients || []).map((ing, i) => (
                     <li key={ing + i}>{ing}</li>
                   ))}
                 </ul>
               </div>
+
               <div>
-                <h4 className="mb-2 font-semibold">Recipe</h4>
+                <h4 className="mb-2 text-xl font-semibold text-slate-900">Preparation Instructions</h4>
                 <ol className="list-decimal pl-5 text-slate-700">
                   {(selectedMeal?.recipe || []).map((step, i) => (
                     <li key={step + i}>{step}</li>
                   ))}
                 </ol>
+              </div>
+
+              <div className="border-t border-slate-200 pt-4">
+                <h4 className="mb-3 text-xl font-semibold text-slate-900">Nutrition Information</h4>
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div>
+                      <p className="text-3xl font-semibold text-slate-900">{selectedMeal?.calories || 0}</p>
+                      <p className="text-sm text-slate-600">🔥 Calories</p>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-semibold text-blue-600">{selectedMeal?.protein || 0}g</p>
+                      <p className="text-sm text-slate-600">💪 Protein</p>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-semibold text-emerald-600">{selectedMeal?.carbs || 0}g</p>
+                      <p className="text-sm text-slate-600">🌾 Carbs</p>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-semibold text-amber-600">{selectedMeal?.fat || 0}g</p>
+                      <p className="text-sm text-slate-600">🥑 Fat</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 overflow-hidden rounded-full bg-slate-200">
+                    <div className="flex h-2 w-full">
+                      <div className="bg-blue-500" style={{ width: `${macroPercents.protein}%` }} />
+                      <div className="bg-emerald-500" style={{ width: `${macroPercents.carbs}%` }} />
+                      <div className="bg-amber-500" style={{ width: `${macroPercents.fat}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-600">
+                    <span>🔵 Protein {macroPercents.protein}%</span>
+                    <span>🟢 Carbs {macroPercents.carbs}%</span>
+                    <span>🟠 Fat {macroPercents.fat}%</span>
+                  </div>
+                </div>
               </div>
             </div>
           </DialogContent>

@@ -168,6 +168,43 @@ function buildHealthScore(product: OpenFoodFactsProduct) {
   return { score, label, notes };
 }
 
+function estimateGlucoseImpact(product: OpenFoodFactsProduct) {
+  const carbs = getNutriment(product, ['carbohydrates_100g', 'carbohydrates']);
+  const sugar = getNutriment(product, ['sugars_100g', 'sugars']);
+  const fiber = getNutriment(product, ['fiber_100g', 'fiber']) ?? 0;
+  const protein = getNutriment(product, ['proteins_100g', 'proteins']) ?? 0;
+
+  const baseFromCarbs = Math.max(0, (carbs ?? 0) * 0.75);
+  const sugarPenalty = Math.max(0, (sugar ?? 0) * 0.85);
+  const fiberRelief = fiber * 0.55;
+  const proteinRelief = protein * 0.2;
+
+  const estimatedSpikeMgDl = Math.max(6, Math.min(85, Math.round(baseFromCarbs + sugarPenalty - fiberRelief - proteinRelief)));
+
+  let spikeLevel = 'Low';
+  if (estimatedSpikeMgDl >= 35) {
+    spikeLevel = 'High';
+  } else if (estimatedSpikeMgDl >= 20) {
+    spikeLevel = 'Moderate';
+  }
+
+  const benefitNotes: string[] = [];
+  if (fiber >= 5) benefitNotes.push('Good fiber may soften the glucose rise.');
+  if (protein >= 10) benefitNotes.push('Protein content may improve meal stability.');
+  if ((sugar ?? 0) >= 12) benefitNotes.push('High sugar can increase spike risk.');
+  if ((carbs ?? 0) >= 35) benefitNotes.push('High total carbs may increase post-meal spike.');
+
+  return {
+    estimatedSpikeMgDl,
+    spikeLevel,
+    carbsPer100g: carbs,
+    sugarPer100g: sugar,
+    fiberPer100g: fiber,
+    proteinPer100g: protein,
+    benefitNotes,
+  };
+}
+
 function hasNutritionFacts(product: OpenFoodFactsProduct, caloriesPer100g: number | null, caloriesPerServing: number | null, computedServingCalories: number | null): boolean {
   const nutrimentCount = Object.keys(product.nutriments || {}).length;
   const explicitNutritionFlag = product.nutrition_data === 'on' || product.nutrition_data_per === '100g' || product.nutrition_data_per === 'serving';
@@ -253,11 +290,16 @@ export async function GET(req: Request) {
       hasNutrition: false,
       barcode: product.code || barcode,
       productName: product.product_name || 'Unknown product',
+      brand: product.brands || '',
+      quantity: product.quantity || '',
+      servingSize: product.serving_size || '',
+      image: product.image_front_small_url || '',
       message: 'Product found, but nutrition facts are not available for this barcode.',
     });
   }
 
   const health = buildHealthScore(product);
+  const glucose = estimateGlucoseImpact(product);
 
   return NextResponse.json({
     found: true,
@@ -272,6 +314,13 @@ export async function GET(req: Request) {
     healthScore: health.score,
     healthLabel: health.label,
     healthNotes: health.notes,
+    estimatedSpikeMgDl: glucose.estimatedSpikeMgDl,
+    spikeLevel: glucose.spikeLevel,
+    carbsPer100g: glucose.carbsPer100g,
+    sugarPer100g: glucose.sugarPer100g,
+    fiberPer100g: glucose.fiberPer100g,
+    proteinPer100g: glucose.proteinPer100g,
+    benefitNotes: glucose.benefitNotes,
     nutriscore: product.nutriscore_grade || '',
     image: product.image_front_small_url || '',
     ingredients: product.ingredients_text || '',

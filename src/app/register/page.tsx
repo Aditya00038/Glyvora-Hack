@@ -13,6 +13,19 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
+function normalizePhoneNumber(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+
+  const plusPrefixed = trimmed.startsWith('+');
+  const digits = trimmed.replace(/\D/g, '');
+
+  if (!digits) return '';
+  if (plusPrefixed) return `+${digits}`;
+  if (digits.length === 10) return `+91${digits}`;
+  return `+${digits}`;
+}
+
 export default function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -50,6 +63,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
+      const normalizedPhone = normalizePhoneNumber(phone);
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
@@ -59,8 +73,8 @@ export default function RegisterPage() {
       await setDoc(doc(firestore, 'users', user.uid), {
         id: user.uid,
         email: email,
-        phoneNumber: phone,
-        smsEnabled: Boolean(phone),
+        phoneNumber: normalizedPhone,
+        smsEnabled: Boolean(normalizedPhone),
         glucoseLowThreshold: 70,
         glucoseHighThreshold: 140,
         firstName: name.split(' ')[0],
@@ -70,16 +84,25 @@ export default function RegisterPage() {
         updatedAt: new Date().toISOString(),
       });
 
-      if (phone) {
-        await fetch('/api/notifications/welcome', {
+      if (normalizedPhone) {
+        const smsResponse = await fetch('/api/notifications/welcome', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to: phone, name }),
+          body: JSON.stringify({ to: normalizedPhone, name }),
         });
+
+        if (!smsResponse.ok) {
+          const smsErrorBody = await smsResponse.json().catch(() => ({}));
+          console.error('Welcome SMS failed:', smsErrorBody);
+          toast({
+            title: 'Account created',
+            description: 'Signup succeeded, but SMS could not be delivered. Check Twilio config or phone format.',
+          });
+        }
       }
 
       toast({ title: "Account created!", description: "Welcome to GLYVORA!" });
-      router.push('/onboarding');
+      router.push('/dashboard');
     } catch (error: any) {
       toast({
         variant: "destructive",

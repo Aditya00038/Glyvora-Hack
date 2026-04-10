@@ -8,7 +8,6 @@ import { useUser } from '@/firebase';
 import { Navigation } from '@/components/Navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { HomeBarcodeScannerDialog } from '@/components/HomeBarcodeScannerDialog';
 import {
   Activity,
   Barcode,
@@ -16,7 +15,6 @@ import {
   Clock3,
   HeartPulse,
   MessageCircle,
-  Sparkles,
   TrendingUp,
   Utensils,
 } from 'lucide-react';
@@ -72,21 +70,6 @@ export default function DashboardPage() {
               <p className="text-xl font-semibold">Home</p>
               <p className="text-sm text-slate-500">Your daily metabolic summary</p>
             </div>
-          </div>
-
-          <div className="grid gap-3 rounded-3xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-emerald-50 to-teal-50 px-5 py-4 text-slate-700 shadow-sm lg:grid-cols-[1fr_auto] lg:items-center">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-white text-emerald-500 shadow-sm">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Welcome back, {displayName}. Finish setup to get tailored nutrition recommendations.</p>
-                <p className="mt-1 text-xs text-slate-600">Your coach is ready with meal suggestions, glucose insights, and reminders.</p>
-              </div>
-            </div>
-            <Link href="/onboarding" className="inline-flex h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-800">
-              Complete Setup
-            </Link>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -172,17 +155,18 @@ export default function DashboardPage() {
             </motion.section>
             </Link>
 
-            <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex h-full min-h-[250px] flex-col rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
+            <Link href="/barcode" className="block">
+            <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex h-full min-h-[250px] flex-col rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_10px_30px_rgba(15,23,42,0.06)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_14px_35px_rgba(15,23,42,0.08)]">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-600">
                 <Barcode className="h-5 w-5" />
               </div>
               <h3 className="mt-8 text-[15px] font-semibold leading-tight tracking-tight text-slate-900">Barcode Scanner</h3>
-              <p className="mt-2 max-w-sm text-xs text-slate-600">Click to scan from photo or upload image, then get calories and health score.</p>
-
-              <div className="mt-4">
-                <HomeBarcodeScannerDialog />
-              </div>
+              <p className="mt-2 max-w-sm text-xs text-slate-600">Open scanner page to click or upload food image, view details, save history, and generate weekly meal plan.</p>
+              <span className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-violet-600 hover:text-violet-700">
+                Open scanner <ChevronRight className="h-4 w-4" />
+              </span>
             </motion.section>
+            </Link>
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">

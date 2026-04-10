@@ -1,26 +1,90 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigation } from '@/components/Navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useUser } from '@/firebase';
+import { useFirestore, useUser } from '@/firebase';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { updateProfile } from 'firebase/auth';
+import { useTheme } from 'next-themes';
 import { Users, Save } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export default function ProfilePage() {
   const { user } = useUser();
+  const firestore = useFirestore();
+  const { setTheme: setAppTheme } = useTheme();
+  const { toast } = useToast();
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [theme, setTheme] = useState('light');
   const [language, setLanguage] = useState('en');
   const [saving, setSaving] = useState(false);
 
+  const normalizeThemeValue = (value: string | null | undefined) => {
+    if (!value) return 'light';
+    if (value === 'auto') return 'system';
+    if (value === 'light' || value === 'dark' || value === 'system') return value;
+    return 'light';
+  };
+
+  useEffect(() => {
+    setDisplayName(user?.displayName || '');
+  }, [user?.displayName]);
+
+  useEffect(() => {
+    document.documentElement.lang = language || 'en';
+  }, [language]);
+
+  useEffect(() => {
+    const loadPrefs = async () => {
+      if (!user?.uid) return;
+      try {
+        const snap = await getDoc(doc(firestore, 'users', user.uid));
+        const data = snap.data() as { theme?: string; language?: string } | undefined;
+        const localTheme = normalizeThemeValue(localStorage.getItem('glyvora_theme'));
+        const cloudTheme = normalizeThemeValue(data?.theme);
+        const nextTheme = localTheme || cloudTheme || 'light';
+        const nextLanguage = localStorage.getItem('glyvora_lang') || data?.language || 'en';
+
+        setTheme(nextTheme);
+        setLanguage(nextLanguage);
+        setAppTheme(nextTheme);
+      } catch {
+        // Keep local defaults when cloud read fails.
+      }
+    };
+
+    loadPrefs();
+  }, [firestore, setAppTheme, user?.uid]);
+
   const handleSaveProfile = async () => {
     setSaving(true);
-    // TODO: Implement profile update logic
-    setTimeout(() => setSaving(false), 1000);
+    try {
+      if (!user) return;
+
+      await updateProfile(user, { displayName });
+      await updateDoc(doc(firestore, 'users', user.uid), {
+        displayName,
+        theme,
+        language,
+        updatedAt: new Date().toISOString(),
+      });
+
+      localStorage.setItem('glyvora_theme', theme);
+      localStorage.setItem('glyvora_lang', language);
+
+      setAppTheme(theme);
+
+      toast({ title: 'Profile updated', description: 'Theme and language preferences were saved.' });
+    } catch {
+      toast({ variant: 'destructive', title: 'Save failed', description: 'Could not save preferences. Please try again.' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -68,14 +132,18 @@ export default function ProfilePage() {
             {/* Theme Selection */}
             <div className="space-y-2">
               <Label htmlFor="theme" className="text-sm font-medium">Theme</Label>
-              <Select value={theme} onValueChange={setTheme}>
+              <Select value={theme} onValueChange={(nextTheme) => {
+                setTheme(nextTheme);
+                setAppTheme(nextTheme);
+                localStorage.setItem('glyvora_theme', nextTheme);
+              }}>
                 <SelectTrigger className="rounded-lg">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="light">Light</SelectItem>
                   <SelectItem value="dark">Dark</SelectItem>
-                  <SelectItem value="auto">Auto (System)</SelectItem>
+                  <SelectItem value="system">Auto (System)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -83,20 +151,30 @@ export default function ProfilePage() {
             {/* Language Selection */}
             <div className="space-y-2">
               <Label htmlFor="language" className="text-sm font-medium">Preferred Language</Label>
-              <Select value={language} onValueChange={setLanguage}>
+              <Select value={language} onValueChange={(nextLang) => {
+                setLanguage(nextLang);
+                localStorage.setItem('glyvora_lang', nextLang);
+                document.documentElement.lang = nextLang;
+              }}>
                 <SelectTrigger className="rounded-lg">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="es">Spanish</SelectItem>
-                  <SelectItem value="fr">French</SelectItem>
-                  <SelectItem value="de">German</SelectItem>
                   <SelectItem value="hi">Hindi</SelectItem>
-                  <SelectItem value="pt">Portuguese</SelectItem>
+                  <SelectItem value="mr">Marathi</SelectItem>
+                  <SelectItem value="gu">Gujarati</SelectItem>
+                  <SelectItem value="pa">Punjabi</SelectItem>
+                  <SelectItem value="bn">Bengali</SelectItem>
+                  <SelectItem value="ta">Tamil</SelectItem>
+                  <SelectItem value="te">Telugu</SelectItem>
+                  <SelectItem value="kn">Kannada</SelectItem>
+                  <SelectItem value="ml">Malayalam</SelectItem>
+                  <SelectItem value="ur">Urdu</SelectItem>
+                  <SelectItem value="or">Odia</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-slate-500">Uses Google Translate API for multilanguage support</p>
+              <p className="text-xs text-slate-500">Uses Google Translate API integration for on-page multilingual support.</p>
             </div>
           </div>
 
