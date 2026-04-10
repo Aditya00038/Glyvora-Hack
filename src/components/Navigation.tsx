@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { PWAInstallButton } from '@/components/pwa-install-button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -167,6 +168,7 @@ export function Navigation() {
       </div>
 
       <div className="mt-auto pt-5">
+        <PWAInstallButton />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

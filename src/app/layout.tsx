@@ -3,10 +3,19 @@ import './globals.css';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
+import { PWARegister } from '@/components/pwa-register';
 
 export const metadata: Metadata = {
   title: 'Glyvora - Metabolic Decision Engine',
   description: 'AI-powered glucose predictions for Type-2 Diabetics.',
+  manifest: '/manifest.webmanifest',
+  themeColor: '#10b981',
+  applicationName: 'Glyvora',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Glyvora',
+  },
   icons: {
     icon: '/Glyvora-icon.png?v=2',
     shortcut: '/Glyvora-icon.png?v=2',
@@ -32,6 +41,7 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={true}>
           <FirebaseClientProvider>
             {children}
+            <PWARegister />
             <Toaster />
           </FirebaseClientProvider>
         </ThemeProvider>
