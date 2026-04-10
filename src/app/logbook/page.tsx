@@ -288,20 +288,36 @@ export default function LogbookPage() {
           const highThreshold = Number(profile.glucoseHighThreshold ?? 140);
           const glucoseReadingMgDl = Number(form.glucoseValue) * 18;
 
-          if (phoneNumber && smsEnabled && Number.isFinite(glucoseReadingMgDl)) {
+          const familyAlertNumbers = Array.isArray(profile.familyMembers)
+            ? profile.familyMembers
+                .filter((member: any) => {
+                  if (!member || typeof member !== 'object') return false;
+                  const normalized = String(member.phoneNumber || '').trim();
+                  return Boolean(normalized) && member.canReceiveAlerts !== false;
+                })
+                .map((member: any) => String(member.phoneNumber || '').trim())
+            : [];
+
+          const recipients = Array.from(new Set([phoneNumber, ...familyAlertNumbers].filter(Boolean)));
+
+          if (recipients.length > 0 && smsEnabled && Number.isFinite(glucoseReadingMgDl)) {
             if (glucoseReadingMgDl <= lowThreshold || glucoseReadingMgDl >= highThreshold) {
               const alertType = glucoseReadingMgDl <= lowThreshold ? 'LOW' : 'HIGH';
               const message = `GLYVORA alert: Your glucose reading is ${Math.round(glucoseReadingMgDl)} mg/dL, which is ${alertType.toLowerCase()} (${glucoseReadingMgDl <= lowThreshold ? `<= ${lowThreshold}` : `>= ${highThreshold}`} mg/dL). Please take care and monitor your levels.`;
 
-              await fetch('/api/notifications/welcome', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  to: phoneNumber,
-                  name: profile.displayName || profile.firstName || user.displayName || 'there',
-                  message,
-                }),
-              });
+              await Promise.allSettled(
+                recipients.map((recipient) =>
+                  fetch('/api/notifications/welcome', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      to: recipient,
+                      name: profile.displayName || profile.firstName || user.displayName || 'there',
+                      message,
+                    }),
+                  })
+                )
+              );
             }
           }
         } catch (smsError) {

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from 'next/image';
 import { useState, useRef, useEffect } from 'react';
 import { useUser } from '@/firebase';
 import { Navigation } from '@/components/Navigation';
@@ -43,14 +44,7 @@ function getCoachResponse(prompt: string) {
 export default function ParivatanPage() {
   const { user, isUserLoading } = useUser();
   const router = useRouter();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'coach',
-      text: "Hello! I'm Parivartan, your personal AI health coach. I'm here to help you manage your diabetes, optimize your nutrition, and support your daily wellness goals. What would you like to know today?",
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [preferredLanguage, setPreferredLanguage] = useState('en');
   const [isLoading, setIsLoading] = useState(false);
@@ -138,14 +132,14 @@ export default function ParivatanPage() {
   const displayName = user.displayName?.split(' ')[0] || 'Aditya';
 
   return (
-    <div className="min-h-screen bg-[#F5F3F0] text-slate-900">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#ecfeff,_#f5f3f0_45%,_#f8fafc)] text-slate-900">
       <Navigation />
 
       <main className="px-4 py-4 lg:ml-48 xl:ml-52 lg:px-5 lg:py-3.5">
-        <div className="mx-auto max-w-5xl space-y-4">
+        <div className="mx-auto max-w-4xl space-y-4">
 
-          <Card className="flex min-h-[620px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-5 py-3">
+          <Card className="flex min-h-[72vh] flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur">
+            <div className="border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-5 py-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                   <Sparkles className="h-5 w-5" />
@@ -159,6 +153,23 @@ export default function ParivatanPage() {
 
             <ScrollArea className="flex-1 p-4">
               <div className="space-y-4">
+                {messages.length === 0 && !isLoading && (
+                  <div className="flex min-h-[360px] flex-col items-center justify-center px-4 text-center">
+                    <div className="rounded-full border-4 border-emerald-200/80 p-1 shadow-sm">
+                      <Image
+                        src="/chatbot-chat.png"
+                        alt="Parivartan assistant"
+                        width={88}
+                        height={88}
+                        className="h-[88px] w-[88px] rounded-full object-cover"
+                      />
+                    </div>
+                    <h3 className="mt-5 text-[38px] font-semibold leading-tight text-slate-900 sm:text-[44px]">How are you feeling today?</h3>
+                    <p className="mt-3 max-w-2xl text-xl leading-relaxed text-slate-500">
+                      Your personal AI health coach is here to help with nutrition, meal planning, glucose predictions, or just to chat.
+                    </p>
+                  </div>
+                )}
                 {messages.map((message) => (
                   <motion.div
                     key={message.id}
@@ -167,7 +178,7 @@ export default function ParivatanPage() {
                     className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`flex max-w-xs gap-3 ${message.type === 'user' ? 'flex-row-reverse' : ''}`}
+                      className={`flex max-w-[85%] gap-3 sm:max-w-[75%] ${message.type === 'user' ? 'flex-row-reverse' : ''}`}
                     >
                       {message.type === 'coach' && (
                         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100">
@@ -175,17 +186,17 @@ export default function ParivatanPage() {
                         </div>
                       )}
                       <div
-                        className={`rounded-xl px-3 py-2.5 ${
+                        className={`rounded-2xl px-3 py-2.5 ${
                           message.type === 'user'
-                            ? 'bg-emerald-500 text-white'
-                            : 'border border-slate-200 bg-slate-50 text-slate-900'
+                            ? 'border border-emerald-200 bg-emerald-50 text-slate-900 shadow-[0_8px_20px_rgba(16,185,129,0.12)]'
+                            : 'border border-slate-200 bg-white text-slate-900 shadow-sm'
                         }`}
                       >
                         <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.text}</p>
                         <p
                           className={`mt-1 text-xs ${
                             message.type === 'user'
-                              ? 'text-emerald-100'
+                              ? 'text-emerald-700'
                               : 'text-slate-500'
                           }`}
                         >
@@ -201,8 +212,14 @@ export default function ParivatanPage() {
                 {isLoading && (
                   <div className="flex justify-start">
                     <div className="flex gap-3">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                        <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-100">
+                        <Image
+                          src="/chatbot-chat.png"
+                          alt="Parivartan"
+                          width={24}
+                          height={24}
+                          className="h-6 w-6 rounded-full object-cover"
+                        />
                       </div>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
                         <p className="text-sm text-slate-500">Coach is thinking...</p>
@@ -215,18 +232,18 @@ export default function ParivatanPage() {
             </ScrollArea>
 
             <div className="border-t border-slate-200 p-4">
-              <form onSubmit={handleSendMessage} className="flex gap-2">
+              <form onSubmit={handleSendMessage} className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Ask Parivartan anything about your health..."
                   disabled={isLoading}
-                  className="rounded-xl border-slate-200 bg-slate-50 text-sm placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  className="h-11 rounded-xl border-0 bg-slate-50 text-sm placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-emerald-500"
                 />
                 <Button
                   type="submit"
                   disabled={isLoading || !input.trim()}
-                  className="h-10 w-10 flex-shrink-0 rounded-xl bg-emerald-500 p-0 text-white hover:bg-emerald-600 disabled:opacity-50"
+                  className="h-11 w-11 flex-shrink-0 rounded-xl bg-emerald-500 p-0 text-white hover:bg-emerald-600 disabled:opacity-50"
                 >
                   {isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

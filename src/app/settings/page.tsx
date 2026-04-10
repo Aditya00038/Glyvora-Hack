@@ -5,17 +5,129 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useFirestore, useUser } from '@/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Zap, MessageCircle, Bell, Users } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
 
 type TabType = 'integrations' | 'notifications' | 'household';
 
+type HouseholdMember = {
+  id: string;
+  phoneNumber: string;
+  relationship: string;
+  canViewData: boolean;
+  canReceiveAlerts: boolean;
+};
+
 export default function SettingsPage() {
+  const firestore = useFirestore();
+  const { user } = useUser();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('integrations');
   const [telegramHandle, setTelegramHandle] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('+91 98765 43210');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [householdMembers, setHouseholdMembers] = useState<string[]>([]);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
+  const [memberPhoneNumber, setMemberPhoneNumber] = useState('');
+  const [memberRelationship, setMemberRelationship] = useState('Spouse');
+  const [canViewData, setCanViewData] = useState(true);
+  const [canReceiveAlerts, setCanReceiveAlerts] = useState(true);
+  const [savingHousehold, setSavingHousehold] = useState(false);
+
+  useEffect(() => {
+    const loadHouseholdMembers = async () => {
+      if (!user?.uid) return;
+
+      try {
+        const snap = await getDoc(doc(firestore, 'users', user.uid));
+        const data = snap.exists() ? (snap.data() as any) : {};
+        const rawMembers = Array.isArray(data.familyMembers) ? data.familyMembers : [];
+
+        const normalized = rawMembers
+          .map((entry: any, idx: number) => {
+            if (typeof entry === 'string') {
+              return {
+                id: `${Date.now()}-${idx}`,
+                phoneNumber: entry,
+                relationship: 'Family',
+                canViewData: true,
+                canReceiveAlerts: true,
+              } satisfies HouseholdMember;
+            }
+
+            const phoneNumber = String(entry?.phoneNumber || '').trim();
+            if (!phoneNumber) return null;
+
+            return {
+              id: String(entry.id || `${Date.now()}-${idx}`),
+              phoneNumber,
+              relationship: String(entry.relationship || 'Family'),
+              canViewData: entry.canViewData !== false,
+              canReceiveAlerts: entry.canReceiveAlerts !== false,
+            } satisfies HouseholdMember;
+          })
+          .filter(Boolean) as HouseholdMember[];
+
+        setHouseholdMembers(normalized);
+      } catch {
+        // Keep local defaults when cloud read fails.
+      }
+    };
+
+    loadHouseholdMembers();
+  }, [firestore, user?.uid]);
+
+  const persistHouseholdMembers = async (members: HouseholdMember[]) => {
+    if (!user?.uid) return;
+
+    setSavingHousehold(true);
+    try {
+      await setDoc(
+        doc(firestore, 'users', user.uid),
+        {
+          familyMembers: members,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } finally {
+      setSavingHousehold(false);
+    }
+  };
+
+  const handleAddMember = async () => {
+    const normalizedPhone = memberPhoneNumber.trim();
+    if (!normalizedPhone) {
+      toast({ title: 'Phone number required', description: 'Enter a family member phone number to continue.' });
+      return;
+    }
+
+    const newMember: HouseholdMember = {
+      id: `${Date.now()}`,
+      phoneNumber: normalizedPhone,
+      relationship: memberRelationship,
+      canViewData,
+      canReceiveAlerts,
+    };
+
+    const nextMembers = [...householdMembers, newMember];
+    setHouseholdMembers(nextMembers);
+    await persistHouseholdMembers(nextMembers);
+    setMemberPhoneNumber('');
+    setMemberRelationship('Spouse');
+    setCanViewData(true);
+    setCanReceiveAlerts(true);
+    toast({ title: 'Member added', description: 'This family contact can now receive glucose alerts.' });
+  };
+
+  const handleRemoveMember = async (id: string) => {
+    const nextMembers = householdMembers.filter((member) => member.id !== id);
+    setHouseholdMembers(nextMembers);
+    await persistHouseholdMembers(nextMembers);
+    toast({ title: 'Member removed', description: 'The contact has been removed from your household list.' });
+  };
 
   return (
     <div className="min-h-screen bg-[#F5F3F0] text-slate-900 pb-10 lg:ml-48 xl:ml-52">
@@ -210,10 +322,13 @@ export default function SettingsPage() {
                   {householdMembers.length > 0 && (
                     <div className="space-y-3">
                       <h3 className="font-medium text-slate-900">Current Members</h3>
-                      {householdMembers.map((member, idx) => (
-                        <div key={idx} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <p className="text-sm text-slate-900">{member}</p>
-                          <button className="text-xs text-rose-600 hover:text-rose-700 font-medium">Remove</button>
+                      {householdMembers.map((member) => (
+                        <div key={member.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">{member.phoneNumber}</p>
+                            <p className="text-xs text-slate-500">{member.relationship} · {member.canReceiveAlerts ? 'Alerts on' : 'Alerts off'}</p>
+                          </div>
+                          <button onClick={() => handleRemoveMember(member.id)} className="text-xs text-rose-600 hover:text-rose-700 font-medium">Remove</button>
                         </div>
                       ))}
                     </div>
@@ -222,18 +337,25 @@ export default function SettingsPage() {
                   <div className="space-y-3 pt-4 border-t border-slate-200">
                     <h3 className="font-medium text-slate-900">Add New Member</h3>
                     <div className="space-y-2">
-                      <Label htmlFor="email" className="text-sm">Email Address</Label>
+                      <Label htmlFor="member-phone" className="text-sm">Phone Number</Label>
                       <Input
-                        id="email"
-                        type="email"
-                        placeholder="family@example.com"
+                        id="member-phone"
+                        type="tel"
+                        value={memberPhoneNumber}
+                        onChange={(e) => setMemberPhoneNumber(e.target.value)}
+                        placeholder="+91 98765 43210"
                         className="rounded-lg"
                       />
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="relationship" className="text-sm">Relationship</Label>
-                      <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                      <select
+                        id="relationship"
+                        value={memberRelationship}
+                        onChange={(e) => setMemberRelationship(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      >
                         <option>Spouse</option>
                         <option>Parent</option>
                         <option>Child</option>
@@ -246,18 +368,30 @@ export default function SettingsPage() {
                       <Label className="text-sm">Permissions</Label>
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                          <input type="checkbox" id="perm-view" defaultChecked className="h-4 w-4 rounded accent-emerald-600" />
+                          <input
+                            type="checkbox"
+                            id="perm-view"
+                            checked={canViewData}
+                            onChange={(e) => setCanViewData(e.target.checked)}
+                            className="h-4 w-4 rounded accent-emerald-600"
+                          />
                           <label htmlFor="perm-view" className="text-sm cursor-pointer">View health data</label>
                         </div>
                         <div className="flex items-center gap-2">
-                          <input type="checkbox" id="perm-alerts" defaultChecked className="h-4 w-4 rounded accent-emerald-600" />
+                          <input
+                            type="checkbox"
+                            id="perm-alerts"
+                            checked={canReceiveAlerts}
+                            onChange={(e) => setCanReceiveAlerts(e.target.checked)}
+                            className="h-4 w-4 rounded accent-emerald-600"
+                          />
                           <label htmlFor="perm-alerts" className="text-sm cursor-pointer">Receive alerts for critical readings</label>
                         </div>
                       </div>
                     </div>
 
-                    <Button className="w-full bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg">
-                      Send Invite
+                    <Button onClick={handleAddMember} disabled={savingHousehold} className="w-full bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg">
+                      {savingHousehold ? 'Saving...' : 'Add Member'}
                     </Button>
                   </div>
                 </div>
