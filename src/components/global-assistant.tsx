@@ -64,10 +64,14 @@ export function GlobalAssistant() {
     try {
       const context = `The user's name is ${user?.displayName}. They have a ${stabilityPercentage}% stability. Target threshold: ${targetGlucose}mg/dL. Diet type: ${dietaryPreference}. Recent meal spikes: ${recentHistory?.slice(0,3).map(m=>`+${m.initialPredictedGlucoseSpike}`).join(', ')}`;
       const res = await aiMetabolicCoach({ message: msg, history: newHistory, userContext: context });
-      setCoachHistory([...newHistory, { role: 'model', content: res.response }]);
+      const isOffline = res.response.includes('fat-pairing') && res.suggestions?.includes('Explain fat-pairing');
+      setCoachHistory([...newHistory, { role: 'model', content: isOffline ? `⚡ Offline Mode — ${res.response}` : res.response }]);
+      if (isOffline) {
+        toast({ title: 'AI is in offline mode', description: 'Responses are pre-cached. Check your API key.' });
+      }
     } catch {
       toast({ variant: 'destructive', title: 'Assistant Disconnected' });
-      setCoachHistory([...newHistory, { role: 'model', content: 'Connection to assistant lost.' }]);
+      setCoachHistory([...newHistory, { role: 'model', content: 'Connection to assistant lost. Please try again later.' }]);
     } finally {
       setIsCoachTyping(false);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);

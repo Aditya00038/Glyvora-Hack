@@ -61,7 +61,7 @@ const generateMetabolicInsightsFlow = ai.defineFlow(
       if (!output) throw new Error("Insights generation failed.");
       return { ...output, isSimulation: false };
     } catch (error: any) {
-      if (error.message?.includes('429') || error.message?.includes('Quota') || !process.env.GEMINI_API_KEY) {
+      if (error.message?.includes('429') || error.message?.includes('Quota') || !process.env.GOOGLE_GENAI_API_KEY) {
         return {
           overallSummary: "Metabolic Engine simulating patterns. Your data suggests sensitivity to refined grains during evening periods.",
           topTriggers: [

@@ -56,7 +56,7 @@ const provideImmediateActionGuidanceFlow = ai.defineFlow(
       if (!output) throw new Error("Action generation failed.");
       return { ...output, isSimulation: false };
     } catch (error: any) {
-      if (error.message?.includes('429') || error.message?.includes('Quota') || !process.env.GEMINI_API_KEY) {
+      if (error.message?.includes('429') || error.message?.includes('Quota') || !process.env.GOOGLE_GENAI_API_KEY) {
         return {
           actions: [
             { icon: 'walk', text: '15-minute brisk walk immediately.', priority: 'high' as const },

@@ -59,7 +59,7 @@ const explainSpikeAndSuggestSwapFlow = ai.defineFlow(
       if (!output) throw new Error("AI failed to generate swap.");
       return { ...output, isSimulation: false };
     } catch (error: any) {
-      if (error.message?.includes('429') || error.message?.includes('Quota') || !process.env.GEMINI_API_KEY) {
+      if (error.message?.includes('429') || error.message?.includes('Quota') || !process.env.GOOGLE_GENAI_API_KEY) {
         return {
           optimizedMealName: "Cauliflower 'Rice' with Paneer Curry",
           optimizedSpikeMgDl: Math.round(input.predictedSpike * 0.45),

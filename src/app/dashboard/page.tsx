@@ -104,8 +104,11 @@ export default function DashboardPage() {
       if (firestore && user) {
         addDocumentNonBlocking(collection(firestore, 'users', user.uid, 'meals'), {
           userId: user.uid, mealImageUrl: dataUri, mealName: result.mealName,
+          detectedFoodItems: result.detectedFoodItems.map(f => f.name),
           initialPredictedGlucoseSpike: result.metrics.predictedSpikeMgDl,
           initialRiskLevel: result.metrics.riskLevel,
+          scienceExplanation: result.science.physiologicalExplanation,
+          isFeedbackProvided: false,
           scannedAt: new Date().toISOString(), updatedAt: new Date().toISOString()
         });
       }
