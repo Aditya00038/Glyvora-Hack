@@ -17,6 +17,8 @@ import {
   type UserProfile,
   type PredictionResult,
 } from '@/lib/ml/glucose-predictor';
+import { useToast } from '@/hooks/use-toast';
+
 
 interface SimulatorState {
   selectedFood: FoodItem | null;
@@ -46,6 +48,7 @@ const riskEmojis = {
 };
 
 export function MetabolicSimulator({ userProfile }: { userProfile: UserProfile }) {
+  const { toast } = useToast();
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [state, setState] = useState<SimulatorState>({
     selectedFood: null,
@@ -115,7 +118,11 @@ export function MetabolicSimulator({ userProfile }: { userProfile: UserProfile }
       setSearchQuery(dishName);
       setState((prev) => ({ ...prev, searchOpen: true }));
     } catch (error) {
-      console.error('Food photo analysis failed:', error);
+      toast({
+        variant: "destructive",
+        title: "Analysis Failed",
+        description: error instanceof Error ? error.message : "Could not identify the dish in this image.",
+      });
     } finally {
       setIsAnalyzingPhoto(false);
     }
@@ -268,11 +275,12 @@ export function MetabolicSimulator({ userProfile }: { userProfile: UserProfile }
                   capture="environment"
                   className="hidden"
                   onChange={async (e) => {
-                    const file = e.currentTarget.files?.[0];
+                    const target = e.target as HTMLInputElement;
+                    const file = target.files?.[0];
                     if (file) {
                       await analyzePhoto(file);
                     }
-                    e.currentTarget.value = '';
+                    target.value = '';
                   }}
                 />
               </div>
