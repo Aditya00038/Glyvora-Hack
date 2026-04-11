@@ -9,7 +9,7 @@
  * - Local storage: training data and learned coefficients
  */
 
-import * as tf from '@tensorflow/tfjs';
+type TfModule = any;
 
 export interface FoodItem {
   id: number;
@@ -57,7 +57,8 @@ export interface FoodGlucoseFeedback {
 }
 
 class GlucosePredictorEngine {
-  private model: tf.LayersModel | null = null;
+  private model: any | null = null;
+  private tf: TfModule | null = null;
   private isInitialized = false;
   private trainingData: FoodGlucoseFeedback[] = [];
   private personalizedCoefficients: Record<string, number> = {};
@@ -65,6 +66,20 @@ class GlucosePredictorEngine {
 
   constructor() {
     this.loadStoredData();
+  }
+
+  private async getTensorflow(): Promise<TfModule | null> {
+    if (this.tf) return this.tf;
+
+    try {
+      // Use a runtime dynamic import so builds don't fail when tfjs is not installed.
+      const dynamicImport = new Function('moduleName', 'return import(moduleName)') as (moduleName: string) => Promise<any>;
+      this.tf = await dynamicImport('@tensorflow/tfjs');
+      return this.tf;
+    } catch (error) {
+      console.warn('TensorFlow.js unavailable, falling back to heuristic mode:', error);
+      return null;
+    }
   }
 
   /**
@@ -75,6 +90,12 @@ class GlucosePredictorEngine {
     if (this.isInitialized) return;
 
     try {
+      const tf = await this.getTensorflow();
+      if (!tf) {
+        this.isInitialized = true;
+        return;
+      }
+
       // Create baseline sequential model (regression for glucose prediction)
       this.model = tf.sequential({
         layers: [
@@ -252,8 +273,10 @@ class GlucosePredictorEngine {
    */
   private async runModelInference(foodOrMeal: FoodItem | FoodItem[], userProfile: UserProfile): Promise<number> {
     const meal = Array.isArray(foodOrMeal) ? foodOrMeal : [foodOrMeal];
+
+    const tf = await this.getTensorflow();
     
-    if (!this.model) {
+    if (!this.model || !tf) {
       return this.calculateHeuristicPrediction(foodOrMeal, userProfile);
     }
 
@@ -271,7 +294,7 @@ class GlucosePredictorEngine {
       ],
     ]);
 
-    const prediction = this.model.predict(input) as tf.Tensor;
+    const prediction = this.model.predict(input) as any;
     const value = (await prediction.data())[0];
 
     // Cleanup
@@ -286,6 +309,9 @@ class GlucosePredictorEngine {
    */
   private async trainModelOnSyntheticData(syntheticData: Array<[number[], number]>): Promise<void> {
     if (!this.model) return;
+
+    const tf = await this.getTensorflow();
+    if (!tf) return;
 
     const xArray = syntheticData.map((d) => d[0]);
     const yArray = syntheticData.map((d) => d[1]);
@@ -310,6 +336,9 @@ class GlucosePredictorEngine {
    */
   private async retrainModel(): Promise<void> {
     if (!this.model || this.trainingData.length === 0) return;
+
+    const tf = await this.getTensorflow();
+    if (!tf) return;
 
     const trainingInputs = this.trainingData.map((feedback) => {
       // Reconstruct food features (simplified - would need food data passed)
