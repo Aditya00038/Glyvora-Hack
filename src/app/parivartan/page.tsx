@@ -71,7 +71,7 @@ export default function ParivatanPage() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !user?.uid) return;
 
     // Add user message
     const userMessage: Message = {
@@ -91,11 +91,11 @@ export default function ParivatanPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage.text,
+          userId: user.uid,
           history: messages.map((m) => ({
-            role: m.type === 'user' ? 'user' : 'assistant',
+            role: m.type === 'user' ? 'user' : 'model',
             content: m.text,
           })),
-          userContext: `User: ${displayName}`,
           preferredLanguage,
         }),
       });
@@ -106,16 +106,17 @@ export default function ParivatanPage() {
       const coachMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'coach',
-        text: apiReply || getCoachResponse(userMessage.text),
+        text: apiReply || 'I\'m here to help with glucose guidance and meal suggestions!',
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, coachMessage]);
-    } catch {
+    } catch (error) {
+      console.error('Chat error:', error);
       const coachMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'coach',
-        text: getCoachResponse(userMessage.text),
+        text: 'Sorry, I encountered an issue. Please try again.',
         timestamp: new Date(),
       };
 

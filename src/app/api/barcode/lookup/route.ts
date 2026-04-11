@@ -1,4 +1,8 @@
 import { NextResponse } from 'next/server';
+import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
+import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
+import { firebaseConfig } from '@/firebase/config';
+import indianFoods from '@/lib/db/indian-foods.json';
 
 type OpenFoodFactsProduct = {
   code?: string;
@@ -13,6 +17,133 @@ type OpenFoodFactsProduct = {
   nutrition_data_per?: string;
   nutriments?: Record<string, string | number | undefined>;
 };
+
+type LookupResponse = {
+  found: boolean;
+  hasNutrition?: boolean;
+  barcode: string;
+  productName?: string;
+  brand?: string;
+  quantity?: string;
+  servingSize?: string;
+  caloriesPer100g?: number | null;
+  caloriesPerServing?: number | null;
+  healthScore?: number;
+  healthLabel?: string;
+  healthNotes?: string[];
+  estimatedSpikeMgDl?: number;
+  spikeLevel?: string;
+  carbsPer100g?: number | null;
+  sugarPer100g?: number | null;
+  fiberPer100g?: number | null;
+  proteinPer100g?: number | null;
+  benefitNotes?: string[];
+  nutriscore?: string;
+  image?: string;
+  ingredients?: string;
+  message?: string;
+  source?: string;
+};
+
+type LocalFoodRecord = Record<string, unknown>;
+
+let firebaseApp: FirebaseApp | null = null;
+try {
+  const apps = getApps();
+  firebaseApp = apps.length > 0 ? getApp() : initializeApp(firebaseConfig);
+} catch (error) {
+  console.warn('Barcode cache Firebase init warning:', error);
+}
+
+const db = firebaseApp ? getFirestore(firebaseApp) : null;
+
+function getBarcodeCacheRef(userId: string, barcode: string) {
+  if (!db) return null;
+  return doc(db, 'users', userId, 'barcode_cache', barcode);
+}
+
+async function readBarcodeCache(userId: string, barcode: string): Promise<LookupResponse | null> {
+  const cacheRef = getBarcodeCacheRef(userId, barcode);
+  if (!cacheRef) return null;
+
+  try {
+    const snap = await getDoc(cacheRef);
+    if (!snap.exists()) return null;
+    const data = snap.data() as LookupResponse;
+    return { ...data, source: 'cache' };
+  } catch (error) {
+    console.warn('Failed to read barcode cache:', error);
+    return null;
+  }
+}
+
+async function writeBarcodeCache(userId: string, barcode: string, payload: LookupResponse) {
+  const cacheRef = getBarcodeCacheRef(userId, barcode);
+  if (!cacheRef) return;
+
+  try {
+    await setDoc(cacheRef, { ...payload, cachedAt: new Date().toISOString() }, { merge: true });
+  } catch (error) {
+    console.warn('Failed to write barcode cache:', error);
+  }
+}
+
+function getLocalFoodBarcode(food: LocalFoodRecord): string | null {
+  const candidates = [food.barcode, food.code, food.upc, food.ean, food.ean13, food.barcodeNumber];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) return String(candidate);
+  }
+  return null;
+}
+
+function findLocalFoodMatch(barcode: string): LocalFoodRecord | null {
+  const foods = indianFoods.foods as LocalFoodRecord[];
+  return foods.find((food) => getLocalFoodBarcode(food) === barcode) || null;
+}
+
+function estimateLocalHealthScore(food: LocalFoodRecord): number {
+  const glycemicIndex = typeof food.glycemicIndex === 'number' ? food.glycemicIndex : 55;
+  const fiber = typeof food.fiber === 'number' ? food.fiber : 0;
+  const protein = typeof food.protein === 'number' ? food.protein : 0;
+  const score = 100 - glycemicIndex * 0.7 + fiber * 4 + protein * 1.5;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function estimateLocalSpike(food: LocalFoodRecord): number {
+  const glycemicIndex = typeof food.glycemicIndex === 'number' ? food.glycemicIndex : 55;
+  const carbs = typeof food.carbohydrates === 'number' ? food.carbohydrates : 0;
+  return Math.max(5, Math.round((glycemicIndex * carbs) / 75));
+}
+
+function buildLocalFoodResponse(food: LocalFoodRecord, barcode: string): LookupResponse {
+  const defaultPortion = typeof food.defaultPortion === 'number' ? food.defaultPortion : 100;
+  const calories = typeof food.calories === 'number' ? food.calories : null;
+  const caloriesPer100g = calories !== null ? Math.round((calories / defaultPortion) * 100) : null;
+
+  return {
+    found: true,
+    hasNutrition: true,
+    barcode,
+    productName: String(food.name || 'Unknown product'),
+    brand: String(food.region || 'Indian food database'),
+    quantity: `${defaultPortion}g`,
+    servingSize: `${defaultPortion}g`,
+    caloriesPer100g,
+    caloriesPerServing: calories,
+    healthScore: estimateLocalHealthScore(food),
+    healthLabel: 'Local food database',
+    healthNotes: [String(food.category || 'Indian food'), String(food.description || 'Offline local match')],
+    estimatedSpikeMgDl: estimateLocalSpike(food),
+    spikeLevel: estimateLocalSpike(food) >= 35 ? 'High' : estimateLocalSpike(food) >= 20 ? 'Moderate' : 'Low',
+    carbsPer100g: typeof food.carbohydrates === 'number' ? food.carbohydrates : null,
+    sugarPer100g: null,
+    fiberPer100g: typeof food.fiber === 'number' ? food.fiber : null,
+    proteinPer100g: typeof food.protein === 'number' ? food.protein : null,
+    benefitNotes: ['Matched from offline Indian food database.'],
+    source: 'local-food-db',
+  };
+}
 
 function toNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -226,9 +357,26 @@ function hasNutritionFacts(product: OpenFoodFactsProduct, caloriesPer100g: numbe
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const barcode = searchParams.get('barcode')?.trim();
+  const userId = searchParams.get('userId')?.trim();
 
   if (!barcode) {
     return NextResponse.json({ error: 'Missing barcode' }, { status: 400 });
+  }
+
+  if (userId) {
+    const cached = await readBarcodeCache(userId, barcode);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+  }
+
+  const localFood = findLocalFoodMatch(barcode);
+  if (localFood) {
+    const localResponse = buildLocalFoodResponse(localFood, barcode);
+    if (userId) {
+      await writeBarcodeCache(userId, barcode, localResponse);
+    }
+    return NextResponse.json(localResponse);
   }
 
   const fields = [
@@ -262,12 +410,19 @@ export async function GET(req: Request) {
   const product = data?.product as OpenFoodFactsProduct | undefined;
 
   if (!product || data?.status !== 1) {
-    return NextResponse.json({
+    const responsePayload: LookupResponse = {
       found: false,
       hasNutrition: false,
       barcode,
       message: 'Invalid barcode or product not found in Food Facts database.',
-    });
+      source: 'openfoodfacts',
+    };
+
+    if (userId) {
+      await writeBarcodeCache(userId, barcode, responsePayload);
+    }
+
+    return NextResponse.json(responsePayload);
   }
 
   const caloriesPer100g = getNutriment(product, ['energy-kcal_100g']);
@@ -285,7 +440,7 @@ export async function GET(req: Request) {
   const hasNutrition = hasNutritionFacts(product, caloriesPer100g ?? caloriesPer100gFromKj, caloriesPerServing, computedServingCalories);
 
   if (!hasNutrition) {
-    return NextResponse.json({
+    const responsePayload: LookupResponse = {
       found: true,
       hasNutrition: false,
       barcode: product.code || barcode,
@@ -295,13 +450,20 @@ export async function GET(req: Request) {
       servingSize: product.serving_size || '',
       image: product.image_front_small_url || '',
       message: 'Product found, but nutrition facts are not available for this barcode.',
-    });
+      source: 'openfoodfacts',
+    };
+
+    if (userId) {
+      await writeBarcodeCache(userId, barcode, responsePayload);
+    }
+
+    return NextResponse.json(responsePayload);
   }
 
   const health = buildHealthScore(product);
   const glucose = estimateGlucoseImpact(product);
 
-  return NextResponse.json({
+  const responsePayload: LookupResponse = {
     found: true,
     hasNutrition: true,
     barcode: product.code || barcode,
@@ -325,5 +487,11 @@ export async function GET(req: Request) {
     image: product.image_front_small_url || '',
     ingredients: product.ingredients_text || '',
     source: 'Open Food Facts',
-  });
+  };
+
+  if (userId) {
+    await writeBarcodeCache(userId, barcode, responsePayload);
+  }
+
+  return NextResponse.json(responsePayload);
 }

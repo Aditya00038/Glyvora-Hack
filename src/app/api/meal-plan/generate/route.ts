@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { callMealPlanGenerator } from '@/actions/meal-plan';
 
 type Meal = {
   id: string;
@@ -41,6 +42,225 @@ type BaseMeal = Omit<Meal, 'id' | 'type'> & {
   vegetarian: boolean;
   vegan?: boolean;
 };
+
+const REQUIRED_MEAL_TYPES: Meal['type'][] = ['Breakfast', 'Lunch', 'Snack', 'Dinner'];
+
+function asMealType(value: string | undefined): Meal['type'] {
+  if (value === 'Breakfast' || value === 'Lunch' || value === 'Snack' || value === 'Dinner') {
+    return value;
+  }
+  return 'Breakfast';
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function parseRatio(value: string | undefined): { proteinShare: number; carbShare: number } | null {
+  if (!value) return null;
+  const parts = value
+    .split(':')
+    .map((part) => Number.parseFloat(part.trim()))
+    .filter((part) => Number.isFinite(part) && part > 0);
+
+  // Expected ratio is Fiber:Protein:Carb.
+  if (parts.length < 3) return null;
+
+  const proteinPart = parts[1];
+  const carbPart = parts[2];
+  const sum = proteinPart + carbPart;
+  if (sum <= 0) return null;
+
+  return {
+    proteinShare: proteinPart / sum,
+    carbShare: carbPart / sum,
+  };
+}
+
+function baseTargetForMealType(type: Meal['type']): { calories: number; protein: number; carbs: number; fat: number } {
+  if (type === 'Breakfast') return { calories: 420, protein: 28, carbs: 40, fat: 16 };
+  if (type === 'Lunch') return { calories: 620, protein: 36, carbs: 62, fat: 24 };
+  if (type === 'Snack') return { calories: 250, protein: 16, carbs: 22, fat: 10 };
+  return { calories: 540, protein: 34, carbs: 40, fat: 22 };
+}
+
+function deriveMealNutrition(
+  type: Meal['type'],
+  ratio: string | undefined,
+  estimatedSpike: number | undefined,
+  sensitivity: string,
+  correctionMode: boolean
+): { calories: number; protein: number; carbs: number; fat: number } {
+  const target = baseTargetForMealType(type);
+  const isHighSensitivity = sensitivity === 'high' || correctionMode;
+  const isLowSensitivity = sensitivity === 'low' && !correctionMode;
+
+  let calories = target.calories;
+  let protein = target.protein;
+  let carbs = target.carbs;
+  let fat = target.fat;
+
+  if (isHighSensitivity) {
+    protein = Math.round(protein * 1.12);
+    carbs = Math.round(carbs * 0.82);
+    fat = Math.round(fat * 1.05);
+    calories = Math.round(calories * 0.95);
+  } else if (isLowSensitivity) {
+    carbs = Math.round(carbs * 1.08);
+    calories = Math.round(calories * 1.04);
+  }
+
+  const ratioParsed = parseRatio(ratio);
+  if (ratioParsed) {
+    const proteinCarbCalories = Math.round(calories * 0.66);
+    protein = Math.round((proteinCarbCalories * ratioParsed.proteinShare) / 4);
+    carbs = Math.round((proteinCarbCalories * ratioParsed.carbShare) / 4);
+    fat = Math.round((calories - protein * 4 - carbs * 4) / 9);
+  }
+
+  if (typeof estimatedSpike === 'number' && estimatedSpike > 35) {
+    carbs = Math.round(carbs * 0.88);
+    protein = Math.round(protein * 1.08);
+  }
+
+  protein = clamp(protein, 10, 60);
+  carbs = clamp(carbs, 12, 85);
+  fat = clamp(fat, 6, 35);
+  calories = clamp(protein * 4 + carbs * 4 + fat * 9, 180, 800);
+
+  return { calories, protein, carbs, fat };
+}
+
+function buildIngredientsFromDescription(type: Meal['type'], name: string, description: string | undefined): string[] {
+  const text = (description || '').trim();
+  if (text.includes(',')) {
+    const parsed = text
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    if (parsed.length) return parsed;
+  }
+
+  if (text.length > 0 && text.length < 70) {
+    return [text, 'Protein side', 'Seasonal vegetables'];
+  }
+
+  if (type === 'Breakfast') return [name, 'Vegetables', 'Healthy fat source'];
+  if (type === 'Lunch') return [name, 'Dal or protein', 'Salad'];
+  if (type === 'Snack') return [name, 'Nuts or seeds', 'Hydration option'];
+  return [name, 'Protein component', 'High-fiber side'];
+}
+
+function buildRecipeSteps(description: string | undefined, estimatedSpike: number | undefined): string[] {
+  const base = (description || '')
+    .split(/\.|\n/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const steps = base.length
+    ? base
+    : ['Prep ingredients.', 'Cook with minimal refined carbs and balanced fats.', 'Serve warm.'];
+
+  if (typeof estimatedSpike === 'number') {
+    steps.push(`Estimated glucose spike: ${Math.round(estimatedSpike)} mg/dL.`);
+  }
+
+  return steps.slice(0, 5);
+}
+
+function fallbackMealFromVariant(type: Meal['type'], dayIndex: number): Meal {
+  const pool = mealVariants[type];
+  const selected = pool[dayIndex % pool.length];
+  const { vegetarian: _v, vegan: _vg, ...base } = selected;
+  return {
+    id: `genkit-fill-${type.toLowerCase()}-${dayIndex}`,
+    type,
+    ...base,
+  };
+}
+
+function convertGenkitToDayPlan(genkitPlan: any): MealPlanResponse {
+  if (!genkitPlan || !genkitPlan.days) {
+    throw new Error('Invalid Genkit meal plan format');
+  }
+
+  const sensitivity = String(genkitPlan?.metadata?.userSensitivity || 'medium').toLowerCase();
+  const correctionMode = Boolean(genkitPlan?.metadata?.correctionMode);
+  const title = genkitPlan.title || '7-Day Metabolic Meal Plan';
+  const sourceDays: any[] = Array.isArray(genkitPlan.days) ? genkitPlan.days : [];
+  const days: DayPlan[] = DAY_NAMES.map((dayName, dayIndex) => {
+    const sourceDay = sourceDays[dayIndex] || sourceDays[dayIndex % Math.max(1, sourceDays.length)] || {};
+    const sourceMeals = Array.isArray(sourceDay.meals) ? sourceDay.meals : [];
+
+    const generatedMeals = sourceMeals.map((genkitMeal: any, mealIndex: number) => {
+      const type = asMealType(genkitMeal?.type);
+      const nutrition = deriveMealNutrition(
+        type,
+        genkitMeal?.macronutrientRatio,
+        typeof genkitMeal?.estimatedSpike === 'number' ? genkitMeal.estimatedSpike : undefined,
+        sensitivity,
+        correctionMode
+      );
+
+      return {
+        id: `genkit-${dayIndex}-${mealIndex}-${type.toLowerCase()}`,
+        type,
+        name: String(genkitMeal?.name || `${type} Meal`),
+        minutes: type === 'Snack' ? 10 : 20,
+        portion: '1 serving',
+        ...nutrition,
+        ingredients: buildIngredientsFromDescription(type, String(genkitMeal?.name || type), genkitMeal?.description),
+        recipe: buildRecipeSteps(genkitMeal?.description, genkitMeal?.estimatedSpike),
+        estimatedSpike: genkitMeal?.estimatedSpike,
+        macronutrientRatio: genkitMeal?.macronutrientRatio,
+        metabolicImpact: genkitMeal?.metabolicImpact,
+      } as Meal;
+    });
+
+    const byType = new Map<Meal['type'], Meal>();
+    for (const meal of generatedMeals) {
+      if (!byType.has(meal.type)) {
+        byType.set(meal.type, meal);
+      }
+    }
+
+    const completeMeals: Meal[] = REQUIRED_MEAL_TYPES.map((type) => byType.get(type) || fallbackMealFromVariant(type, dayIndex));
+
+    return recalcDay({
+      dayName: String(sourceDay?.dayName || dayName),
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      meals: completeMeals,
+    });
+  });
+
+  const groceryItems = new Map<string, { quantity: string; category: string }>();
+  days.forEach(day => {
+    day.meals.forEach(meal => {
+      meal.ingredients.forEach(ing => {
+        const key = ing.toLowerCase();
+        if (!groceryItems.has(key)) {
+          groceryItems.set(key, { quantity: '1 serving', category: 'Ingredients' });
+        }
+      });
+    });
+  });
+
+  const groceryList = Array.from(groceryItems.entries()).map(([item, data]) => ({
+    item: item.charAt(0).toUpperCase() + item.slice(1),
+    ...data,
+  }));
+
+  return {
+    title,
+    days,
+    groceryList,
+  };
+}
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -505,9 +725,24 @@ export async function POST(req: Request) {
       currentPlan = null,
       profile = {},
       scannedFoods = [],
+      userId,
     } = await req.json();
 
     const typedProfile = (profile || {}) as ProfileInput;
+
+    // Try Genkit meal plan first if userId and mode is 'full'
+    if (mode === 'full' && userId) {
+      try {
+        const genkitResult = await callMealPlanGenerator(userId, false);
+        if (genkitResult.plan && genkitResult.source === 'genkit-meal-planner') {
+          const converted = convertGenkitToDayPlan(genkitResult.plan);
+          return NextResponse.json(converted);
+        }
+      } catch (genkitError) {
+        console.warn('Genkit meal plan generation failed, falling back to traditional approach:', genkitError);
+        // Fall through to legacy paths
+      }
+    }
 
     if (mode === 'regenerate-meal' && currentPlan?.days?.length) {
       return NextResponse.json(regenerateSpecificMeal(currentPlan, Number(dayIndex), Number(mealIndex), typedProfile));

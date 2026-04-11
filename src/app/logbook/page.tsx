@@ -49,6 +49,7 @@ type LogEntry = {
   diastolic?: string;
   exerciseType?: string;
   durationMinutes?: string;
+  foodName?: string;
 };
 
 type EntryFormState = {
@@ -70,6 +71,7 @@ type EntryFormState = {
   diastolic: string;
   exerciseType: string;
   durationMinutes: string;
+  foodName: string;
 };
 
 const periodOptions = [7, 30, 90];
@@ -137,6 +139,7 @@ const initialFormState: EntryFormState = {
   diastolic: '',
   exerciseType: '',
   durationMinutes: '',
+  foodName: '',
 };
 
 export default function LogbookPage() {
@@ -153,7 +156,7 @@ export default function LogbookPage() {
   const [form, setForm] = useState<EntryFormState>(initialFormState);
 
   const loadEntries = async () => {
-    if (!user) {
+    if (!user || !firestore) {
       setEntries([]);
       setLoading(false);
       return;
@@ -168,7 +171,7 @@ export default function LogbookPage() {
 
   useEffect(() => {
     loadEntries();
-  }, [user]);
+  }, [user, firestore]);
 
   const filteredEntries = useMemo(() => {
     const now = new Date();
@@ -233,7 +236,7 @@ export default function LogbookPage() {
       return { ...base, glucoseValue: form.glucoseValue, glucoseContext: form.glucoseContext };
     }
     if (activeTab === 'food') {
-      return { ...base, carbs: form.carbs, protein: form.protein, fat: form.fat, calories: form.calories };
+      return { ...base, foodName: form.foodName, carbs: form.carbs, protein: form.protein, fat: form.fat, calories: form.calories };
     }
     if (activeTab === 'insulin') {
       return { ...base, insulinUnits: form.insulinUnits, insulinType: form.insulinType };
@@ -376,6 +379,10 @@ export default function LogbookPage() {
       return (
         <>
           <div className="space-y-2">
+            <Label>Food Name</Label>
+            <Input value={form.foodName} onChange={(e) => updateForm('foodName', e.target.value)} placeholder="e.g., Idli Sambar, Roti with Dal" />
+          </div>
+          <div className="space-y-2">
             <Label>Carbohydrates (grams)</Label>
             <Input value={form.carbs} onChange={(e) => updateForm('carbs', e.target.value)} placeholder="e.g., 45" />
           </div>
@@ -442,8 +449,8 @@ export default function LogbookPage() {
         <>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Weight (lbs)</Label>
-              <Input value={form.weight} onChange={(e) => updateForm('weight', e.target.value)} placeholder="e.g., 165" />
+              <Label>Weight (kg)</Label>
+              <Input value={form.weight} onChange={(e) => updateForm('weight', e.target.value)} placeholder="e.g., 75" />
             </div>
             <div className="space-y-2">
               <Label>A1C (%)</Label>
@@ -729,7 +736,7 @@ export default function LogbookPage() {
                       {entry.entryType === 'food' && `${entry.carbs || '-'}g carbs, ${entry.calories || '-'} kcal`}
                       {entry.entryType === 'insulin' && `${entry.insulinUnits || '-'} units (${entry.insulinType || '-'})`}
                       {entry.entryType === 'meds' && `${entry.medicationName || '-'} ${entry.medicationDosage || ''}`}
-                      {entry.entryType === 'vitals' && `Weight ${entry.weight || '-'} lbs, BP ${entry.systolic || '-'}/${entry.diastolic || '-'}`}
+                      {entry.entryType === 'vitals' && `Weight ${entry.weight || '-'} kg, BP ${entry.systolic || '-'}/${entry.diastolic || '-'}`}
                       {entry.entryType === 'exercise' && `${entry.exerciseType || '-'} for ${entry.durationMinutes || '-'} min`}
                     </p>
                   </div>
