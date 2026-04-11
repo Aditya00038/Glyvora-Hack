@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { callMetabolicCoach } from '@/actions/metabolic-coach';
 
 type BarcodeLookup = {
   found?: boolean;
@@ -203,13 +204,19 @@ async function getBarcodeReply(req: Request, barcode: string): Promise<string | 
 
 export async function POST(req: Request) {
   try {
-    const { message, history = [], userContext = '', preferredLanguage = 'en' } = await req.json();
+    const body = await req.json();
+    const { message, history = [], userContext = '', preferredLanguage = 'en', userId } = body;
     const targetLanguage = normalizeLang(preferredLanguage);
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID is required' }, { status: 401 });
+    }
+
+    // Check for barcode in message
     const barcode = findBarcodeInMessage(message);
     if (barcode) {
       const barcodeReply = await getBarcodeReply(req, barcode);
@@ -219,64 +226,37 @@ export async function POST(req: Request) {
       }
     }
 
+    // Check if it's a food spike question - use structured reply
     if (isFoodSpikeQuestion(message)) {
       const shortFoodReply = structuredFoodReply(message);
       const translatedShortFoodReply = await translateText(shortFoodReply, targetLanguage);
       return NextResponse.json({ reply: translatedShortFoodReply, source: 'structured-food' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
+    // Call Genkit AI Coach with Firestore context
+    try {
+      const coachResult = await callMetabolicCoach(
+        userId,
+        message,
+        history.map((h: any) => ({
+          role: h.role === 'user' ? 'user' : 'model' as const,
+          content: h.content,
+        }))
+      );
+
+      const translatedResponse = await translateText(coachResult.response, targetLanguage);
+      return NextResponse.json({ 
+        reply: translatedResponse,
+        source: coachResult.source,
+      });
+    } catch (genkitError: any) {
+      console.error('Genkit error:', genkitError);
+      // Fallback to simple Gemini if Genkit fails
       const fallback = await translateText(fallbackReply(message), targetLanguage);
-      return NextResponse.json({ reply: fallback, fallback: true });
+      return NextResponse.json({ reply: fallback, fallback: true, error: 'genkit-failed' });
     }
-
-    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-
-    const prior = history
-      .slice(-8)
-      .map((h: any) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`)
-      .join('\n');
-
-    const prompt = [
-      'You are Parivartan, GLYVORA assistant.',
-      'Answer in very short helpful text, maximum 70 words.',
-      'Focus on webapp help (features, navigation) or nutrition/wellness guidance.',
-      'When user asks about a food spike, always include in short form: 1) main ingredients, 2) estimated spike range in mg/dL and level, 3) short reason (GI, carbs, sugar, fiber/protein), 4) 1-2 ways to reduce spike.',
-      'Never provide diagnosis. Be safe and practical.',
-      userContext ? `User context: ${userContext}` : '',
-      `Preferred response language: ${targetLanguage}`,
-      prior ? `Conversation:\n${prior}` : '',
-      `User question: ${message}`,
-      'Return plain text only.',
-    ]
-      .filter(Boolean)
-      .join('\n\n');
-
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      }),
-    });
-
-    if (!res.ok) {
-      const fallback = await translateText(fallbackReply(message), targetLanguage);
-      return NextResponse.json({ reply: fallback, fallback: true });
-    }
-
-    const data = await res.json();
-    const reply = extractText(data).trim();
-
-    if (!reply) {
-      const fallback = await translateText(fallbackReply(message), targetLanguage);
-      return NextResponse.json({ reply: fallback, fallback: true });
-    }
-
-    const translatedReply = await translateText(reply, targetLanguage);
-    return NextResponse.json({ reply: translatedReply });
   } catch (error: any) {
-    return NextResponse.json({ reply: fallbackReply('help me'), fallback: true });
+    console.error('Chat API error:', error);
+    return NextResponse.json({ reply: fallbackReply('help me'), fallback: true, error: error.message });
   }
 }

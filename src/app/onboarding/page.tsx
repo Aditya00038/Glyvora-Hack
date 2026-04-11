@@ -27,8 +27,8 @@ interface ProfileData {
 const steps = [
   { id: 'age', title: 'What\'s your age?', description: 'This helps us personalize your metabolic profile' },
   { id: 'gender', title: 'What\'s your gender?', description: 'This helps us provide better health insights' },
-  { id: 'height', title: 'What\'s your height?', description: 'We\'ll use this to calculate your BMI' },
-  { id: 'weight', title: 'What\'s your weight?', description: 'Current weight helps us track your progress' },
+  { id: 'height', title: 'What\'s your height?', description: 'Enter in centimeters - we\'ll use this to calculate your BMI' },
+  { id: 'weight', title: 'What\'s your weight?', description: 'Enter in kilograms - helps us track your progress' },
   { id: 'activityLevel', title: 'What\'s your activity level?', description: 'This helps us calculate your calorie needs' },
   { id: 'healthGoal', title: 'What are your health goals?', description: 'Select all that apply to you' },
   { id: 'dietaryPreference', title: 'What\'s your dietary preference?', description: 'Help us suggest appropriate meal plans' },
@@ -75,12 +75,12 @@ export default function OnboardingPage() {
       toast({ variant: "destructive", title: "Please select", description: "Select your gender to continue" });
       return;
     }
-    if (step === 'height' && !data.height) {
-      toast({ variant: "destructive", title: "Please enter", description: "Enter your height to continue" });
+    if (step === 'height' && (!data.height || Number(data.height) < 100 || Number(data.height) > 250)) {
+      toast({ variant: "destructive", title: "Invalid height", description: "Please enter height between 100-250 cm" });
       return;
     }
-    if (step === 'weight' && !data.weight) {
-      toast({ variant: "destructive", title: "Please enter", description: "Enter your weight to continue" });
+    if (step === 'weight' && (!data.weight || Number(data.weight) < 30 || Number(data.weight) > 200)) {
+      toast({ variant: "destructive", title: "Invalid weight", description: "Please enter weight between 30-200 kg" });
       return;
     }
     if (step === 'activityLevel' && !data.activityLevel) {
@@ -226,38 +226,22 @@ export default function OnboardingPage() {
               <div className="space-y-4">
                 <div className="flex gap-4">
                   <div className="flex-1">
-                    <Label className="text-sm text-slate-700 mb-2 block">Feet</Label>
                     <Input 
                       type="number" 
-                      min="3" 
-                      max="8"
-                      placeholder="e.g., 5" 
-                      value={data.height.split("'")[0] || ''}
-                      onChange={(e) => {
-                        const feet = e.target.value;
-                        const inches = data.height.split("'")[1] || '';
-                        setData({ ...data, height: `${feet}'${inches}` });
-                      }}
+                      min="100" 
+                      max="250"
+                      placeholder="e.g., 170" 
+                      value={data.height}
+                      onChange={(e) => setData({ ...data, height: e.target.value })}
                       className="bg-slate-50 border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400"
+                      autoFocus
                     />
                   </div>
-                  <div className="flex-1">
-                    <Label className="text-sm text-slate-700 mb-2 block">Inches</Label>
-                    <Input 
-                      type="number" 
-                      min="0" 
-                      max="11"
-                      placeholder="e.g., 11" 
-                      value={data.height.split("'")[1] || ''}
-                      onChange={(e) => {
-                        const feet = data.height.split("'")[0] || '';
-                        const inches = e.target.value;
-                        setData({ ...data, height: `${feet}'${inches}` });
-                      }}
-                      className="bg-slate-50 border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400"
-                    />
+                  <div className="flex items-center px-4 bg-slate-50 rounded-lg border border-slate-300 font-medium text-slate-700">
+                    cm
                   </div>
                 </div>
+                <p className="text-xs text-slate-500">Typical range: 140-220 cm</p>
               </div>
             )}
 
@@ -267,16 +251,20 @@ export default function OnboardingPage() {
                   <div className="flex-1">
                     <Input 
                       type="number" 
-                      placeholder="Enter weight" 
-                      value={data.weight.split(' ')[0] || ''}
-                      onChange={(e) => setData({ ...data, weight: `${e.target.value} lbs` })}
+                      min="30" 
+                      max="200"
+                      placeholder="e.g., 65" 
+                      value={data.weight}
+                      onChange={(e) => setData({ ...data, weight: e.target.value })}
                       className="bg-slate-50 border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400"
+                      autoFocus
                     />
                   </div>
                   <div className="flex items-center px-4 bg-slate-50 rounded-lg border border-slate-300 font-medium text-slate-700">
-                    lbs
+                    kg
                   </div>
                 </div>
+                <p className="text-xs text-slate-500">Typical range: 40-150 kg</p>
               </div>
             )}
 

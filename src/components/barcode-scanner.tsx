@@ -25,6 +25,7 @@ type LookupResult = {
   ingredients?: string;
   source?: string;
   message?: string;
+  error?: string;
 };
 
 type ScanStatus = 'idle' | 'scanning' | 'lookup' | 'error' | 'ready';

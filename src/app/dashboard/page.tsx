@@ -7,8 +7,10 @@ import { motion } from 'framer-motion';
 import { useEffect } from 'react';
 import { useUser } from '@/firebase';
 import { Navigation } from '@/components/Navigation';
+import { MetabolicSimulator } from '@/components/dashboard/metabolic-simulator';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import type { UserProfile } from '@/lib/ml/glucose-predictor';
 import {
   Activity,
   Barcode,
@@ -43,6 +45,14 @@ const quickCards = [
     href: '/logbook',
   },
 ];
+
+// Mock user profile - In production, fetch from user onboarding data
+const DEFAULT_USER_PROFILE: UserProfile = {
+  baselineGlucose: 95,
+  diabetesType: 'PreDiabetic',
+  activityLevel: 'ModeratelyActive',
+  sensitivity: 1.0,
+};
 
 export default function DashboardPage() {
   const { user, isUserLoading } = useUser();
@@ -187,6 +197,11 @@ export default function DashboardPage() {
                       <div>
                         <h4 className="text-base font-semibold text-slate-900">{card.title}</h4>
                         <p className="mt-1 text-xs text-slate-600">{card.description}</p>
+
+          {/* Metabolic Simulator - Local ML Glucose Prediction */}
+          <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+            <MetabolicSimulator userProfile={DEFAULT_USER_PROFILE} />
+          </motion.section>
                       </div>
                       <ChevronRight className="mt-1 h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-1" />
                     </div>

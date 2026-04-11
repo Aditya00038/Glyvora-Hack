@@ -442,8 +442,8 @@ export default function LogbookPage() {
         <>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Weight (lbs)</Label>
-              <Input value={form.weight} onChange={(e) => updateForm('weight', e.target.value)} placeholder="e.g., 165" />
+              <Label>Weight (kg)</Label>
+              <Input value={form.weight} onChange={(e) => updateForm('weight', e.target.value)} placeholder="e.g., 75" />
             </div>
             <div className="space-y-2">
               <Label>A1C (%)</Label>
@@ -729,7 +729,7 @@ export default function LogbookPage() {
                       {entry.entryType === 'food' && `${entry.carbs || '-'}g carbs, ${entry.calories || '-'} kcal`}
                       {entry.entryType === 'insulin' && `${entry.insulinUnits || '-'} units (${entry.insulinType || '-'})`}
                       {entry.entryType === 'meds' && `${entry.medicationName || '-'} ${entry.medicationDosage || ''}`}
-                      {entry.entryType === 'vitals' && `Weight ${entry.weight || '-'} lbs, BP ${entry.systolic || '-'}/${entry.diastolic || '-'}`}
+                      {entry.entryType === 'vitals' && `Weight ${entry.weight || '-'} kg, BP ${entry.systolic || '-'}/${entry.diastolic || '-'}`}
                       {entry.entryType === 'exercise' && `${entry.exerciseType || '-'} for ${entry.durationMinutes || '-'} min`}
                     </p>
                   </div>

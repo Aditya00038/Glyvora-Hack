@@ -9,6 +9,7 @@ import { Navigation } from '@/components/Navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -16,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { buildGroceryListFromMealPlan } from '@/actions/grocery-list';
 
 type Meal = {
   id: string;
@@ -34,7 +36,21 @@ type MealPlan = {
   days: DayPlan[];
 };
 
-type GroceryCategory = 'Produce' | 'Protein' | 'Dairy' | 'Pantry' | 'Spices' | 'Other';
+type GroceryItem = {
+  item: string;
+  quantity: string;
+};
+
+type GrocerySection = {
+  category: string;
+  items: GroceryItem[];
+};
+
+type GroceryPlan = MealPlan & {
+  groceryList?: GrocerySection[];
+};
+
+type GroceryCategory = string;
 
 type GroceryEntry = {
   item: string;
@@ -44,116 +60,57 @@ type GroceryEntry = {
   count: number;
 };
 
-const STORAGE_KEY = 'glyvora_latest_meal_plan';
-
 type FilterMode = 'all' | 'single' | 'custom';
 
-function categoryForItem(name: string): GroceryCategory {
-  const value = name.toLowerCase();
+const STORAGE_KEY = 'glyvora_latest_meal_plan';
+const CHECKED_KEY_PREFIX = 'glyvora_grocery_checked';
 
-  if (/spinach|broccoli|capsicum|pepper|tomato|onion|carrot|lettuce|cucumber|beans|cauliflower|potato|avocado|fruit|apple|banana|mango/.test(value)) {
-    return 'Produce';
-  }
-
-  if (/paneer|tofu|chicken|fish|egg|eggs|dal|lentil|beans|chana|tuna|meat|turkey/.test(value)) {
-    return 'Protein';
-  }
-
-  if (/milk|curd|yogurt|cheese|butter|ghee|skyr/.test(value)) {
-    return 'Dairy';
-  }
-
-  if (/rice|quinoa|oats|bread|roti|flour|oil|olive|seed|almond|walnut|peanut|chickpea|pasta|noodle/.test(value)) {
-    return 'Pantry';
-  }
-
-  if (/salt|pepper|masala|turmeric|cumin|mustard|garlic|ginger|chili|spice/.test(value)) {
-    return 'Spices';
-  }
-
-  return 'Other';
+function getCheckedStorageKey(plan: GroceryPlan | null) {
+  return `${CHECKED_KEY_PREFIX}:${plan?.title || 'default'}`;
 }
 
-function parseIngredient(raw: string): { item: string; qty: string } {
-  const text = raw.trim();
-  const quantityMatch = text.match(/^(.*?)(\d+(?:\.\d+)?\s*(?:kg|g|mg|ml|l|cup|cups|tsp|tbsp|slice|slices|piece|pieces)?)$/i);
+function getPlanFromStorage(): GroceryPlan | null {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
 
-  if (quantityMatch) {
-    return {
-      item: quantityMatch[1].trim().replace(/[,-]$/, ''),
-      qty: quantityMatch[2].trim(),
-    };
+  try {
+    return JSON.parse(raw) as GroceryPlan;
+  } catch {
+    return null;
   }
-
-  return { item: text, qty: '1 item' };
 }
 
-function mergeQuantities(values: string[]): string {
-  const normalized = values.map((v) => v.trim()).filter(Boolean);
-  if (!normalized.length) return '1 item';
+function buildPlanSignature(plan: GroceryPlan | null): string {
+  if (!plan?.days?.length) return 'default';
+  return [plan.title || 'meal-plan', ...plan.days.map((day) => day.dayName)].join('|');
+}
 
-  const parsed = normalized.map((value) => {
-    const match = value.match(/^(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$/);
-    if (!match) return null;
-    return { num: Number(match[1]), unit: match[2].toLowerCase() };
-  });
+function flattenSectionsToEntries(sections: GrocerySection[], activeDays: string[]): GroceryEntry[] {
+  const entries: GroceryEntry[] = [];
 
-  if (parsed.every(Boolean)) {
-    const entries = parsed as Array<{ num: number; unit: string }>;
-    const firstUnit = entries[0].unit;
-    if (entries.every((entry) => entry.unit === firstUnit)) {
-      const sum = entries.reduce((acc, entry) => acc + entry.num, 0);
-      return `${Number.isInteger(sum) ? sum : sum.toFixed(1)} ${firstUnit}`;
+  for (const section of sections) {
+    for (const item of section.items) {
+      entries.push({
+        item: item.item,
+        quantity: item.quantity,
+        category: section.category,
+        days: activeDays,
+        count: 1,
+      });
     }
   }
 
-  return Array.from(new Set(normalized)).slice(0, 3).join(' + ');
-}
-
-function buildGroceryEntries(days: DayPlan[]): GroceryEntry[] {
-  const map = new Map<string, { item: string; qty: string[]; category: GroceryCategory; daySet: Set<string>; count: number }>();
-
-  for (const day of days) {
-    for (const meal of day.meals) {
-      for (const ingredient of meal.ingredients || []) {
-        const parsed = parseIngredient(ingredient);
-        const key = parsed.item.toLowerCase();
-        const category = categoryForItem(parsed.item);
-        const existing = map.get(key);
-
-        if (existing) {
-          existing.qty.push(parsed.qty);
-          existing.daySet.add(day.dayName);
-          existing.count += 1;
-        } else {
-          map.set(key, {
-            item: parsed.item,
-            qty: [parsed.qty],
-            category,
-            daySet: new Set([day.dayName]),
-            count: 1,
-          });
-        }
-      }
-    }
-  }
-
-  return Array.from(map.values())
-    .map((entry) => ({
-      item: entry.item,
-      quantity: mergeQuantities(entry.qty),
-      category: entry.category,
-      days: Array.from(entry.daySet),
-      count: entry.count,
-    }))
-    .sort((a, b) => a.item.localeCompare(b.item));
+  return entries.sort((left, right) => left.item.localeCompare(right.item));
 }
 
 export default function GroceryListPage() {
   const auth = useAuth();
   const firestore = useFirestore();
 
-  const [plan, setPlan] = useState<MealPlan | null>(null);
+  const [plan, setPlan] = useState<GroceryPlan | null>(null);
+  const [grocerySections, setGrocerySections] = useState<GrocerySection[]>([]);
+  const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [singleDayIndex, setSingleDayIndex] = useState(0);
@@ -177,26 +134,34 @@ export default function GroceryListPage() {
   const loadPlan = async () => {
     setLoading(true);
     try {
-      if (typeof window !== 'undefined') {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as MealPlan;
-          if (parsed?.days?.length) {
-            setPlan(parsed);
-            setLoading(false);
+      const user = auth.currentUser;
+
+      if (user?.uid) {
+        const savedSnap = await getDoc(doc(firestore, 'users', user.uid, 'mealPlans', 'current'));
+        if (savedSnap.exists()) {
+          const savedPlan = savedSnap.data() as GroceryPlan;
+          if (savedPlan?.days?.length) {
+            setPlan(savedPlan);
             return;
           }
         }
       }
 
+      const storedPlan = getPlanFromStorage();
+      if (storedPlan?.days?.length) {
+        setPlan(storedPlan);
+        return;
+      }
+
       const profile = await getProfileForGeneration();
+      const userId = auth.currentUser?.uid;
       const res = await fetch('/api/meal-plan/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'full', profile }),
+        body: JSON.stringify({ mode: 'full', profile, userId }),
       });
 
-      const data = (await res.json()) as MealPlan;
+      const data = (await res.json()) as GroceryPlan;
       setPlan(data);
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -219,6 +184,48 @@ export default function GroceryListPage() {
     });
   }, [plan?.days?.length]);
 
+  useEffect(() => {
+    if (!plan?.days?.length) return;
+
+    const selectedDays = (() => {
+      if (filterMode === 'single') return [plan.days[singleDayIndex]].filter(Boolean) as DayPlan[];
+      if (filterMode === 'custom') {
+        return customDayIndexes.map((index) => plan.days[index]).filter(Boolean) as DayPlan[];
+      }
+      return plan.days;
+    })();
+
+    const activePlan: GroceryPlan = {
+      ...plan,
+      days: selectedDays,
+    };
+
+    buildGroceryListFromMealPlan(activePlan)
+      .then((result) => {
+        setGrocerySections(result.sections);
+      })
+      .catch((error) => {
+        console.warn('Failed to build grocery list from meal plan:', error);
+        setGrocerySections([]);
+      });
+
+    if (typeof window !== 'undefined') {
+      const storageKey = `${CHECKED_KEY_PREFIX}:${buildPlanSignature(activePlan)}`;
+      const raw = window.localStorage.getItem(storageKey);
+      setCheckedItems(raw ? JSON.parse(raw) as Record<string, boolean> : {});
+    }
+  }, [customDayIndexes, filterMode, plan, singleDayIndex]);
+
+  useEffect(() => {
+    if (!plan?.days?.length || typeof window === 'undefined') return;
+    const activePlanSignature = buildPlanSignature({ ...plan, days: filterMode === 'single'
+      ? [plan.days[singleDayIndex]].filter(Boolean) as DayPlan[]
+      : filterMode === 'custom'
+        ? customDayIndexes.map((index) => plan.days[index]).filter(Boolean) as DayPlan[]
+        : plan.days });
+    window.localStorage.setItem(`${CHECKED_KEY_PREFIX}:${activePlanSignature}`, JSON.stringify(checkedItems));
+  }, [checkedItems, customDayIndexes, filterMode, plan, singleDayIndex]);
+
   const activeDayIndexes = useMemo(() => {
     if (!plan?.days?.length) return [];
 
@@ -236,24 +243,31 @@ export default function GroceryListPage() {
     return activeDayIndexes.map((idx) => plan.days[idx]).filter(Boolean);
   }, [activeDayIndexes, plan?.days]);
 
-  const groceryEntries = useMemo(() => buildGroceryEntries(activeDays), [activeDays]);
+  const groceryEntries = useMemo(() => flattenSectionsToEntries(grocerySections, activeDays.map((day) => day.dayName)), [activeDays, grocerySections]);
 
   const groupedEntries = useMemo(() => {
-    const groups: Record<GroceryCategory, GroceryEntry[]> = {
-      Produce: [],
-      Protein: [],
-      Dairy: [],
-      Pantry: [],
-      Spices: [],
-      Other: [],
-    };
+    const groups: Record<string, GroceryEntry[]> = {};
 
     for (const entry of groceryEntries) {
+      if (!groups[entry.category]) {
+        groups[entry.category] = [];
+      }
       groups[entry.category].push(entry);
     }
 
     return groups;
   }, [groceryEntries]);
+
+  const toggleChecked = (itemKey: string) => {
+    setCheckedItems((prev) => {
+      const next = { ...prev, [itemKey]: !prev[itemKey] };
+      if (typeof window !== 'undefined') {
+        const storageKey = `${CHECKED_KEY_PREFIX}:${buildPlanSignature(plan ? { ...plan, days: activeDays } : null)}`;
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+      }
+      return next;
+    });
+  };
 
   const toggleCustomDay = (index: number) => {
     setCustomDayIndexes((prev) => {
@@ -372,23 +386,31 @@ export default function GroceryListPage() {
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {(Object.keys(groupedEntries) as GroceryCategory[]).map((category) => {
-              const items = groupedEntries[category];
-              if (!items.length) return null;
+            {Object.entries(groupedEntries).map(([category, sectionItems]) => {
+              if (!sectionItems.length) return null;
 
               return (
                 <Card key={category} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="mb-3 flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-slate-900">{category}</h3>
-                    <Badge variant="outline">{items.length}</Badge>
+                    <Badge variant="outline">{sectionItems.length}</Badge>
                   </div>
 
                   <div className="space-y-2">
-                    {items.map((entry) => (
-                      <div key={`${entry.category}-${entry.item}`} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-                        <p className="text-sm font-semibold text-slate-900">{entry.item}</p>
-                        <p className="text-xs text-slate-600">Qty: {entry.quantity}</p>
-                        <p className="text-[11px] text-slate-500">Used in: {entry.days.join(', ')}</p>
+                    {sectionItems.map((entry) => (
+                      <div key={`${entry.category}-${entry.item}`} className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                        <Checkbox
+                          checked={!!checkedItems[`${entry.category}-${entry.item}`]}
+                          onCheckedChange={() => toggleChecked(`${entry.category}-${entry.item}`)}
+                          className="mt-1"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm font-semibold text-slate-900 ${checkedItems[`${entry.category}-${entry.item}`] ? 'line-through opacity-60' : ''}`}>
+                            {entry.item}
+                          </p>
+                          <p className="text-xs text-slate-600">Qty: {entry.quantity}</p>
+                          <p className="text-[11px] text-slate-500">Used in: {entry.days.join(', ')}</p>
+                        </div>
                       </div>
                     ))}
                   </div>

@@ -99,7 +99,7 @@ Complete health tracking system with Firestore persistence:
 2. **Food**: Carbs, Protein, Fat, Calories
 3. **Insulin**: Units + Type (Rapid-acting, Short-acting, Intermediate, Long-acting)
 4. **Medications**: Name + Dosage
-5. **Vitals**: Weight (lbs), A1C (%), Systolic/Diastolic BP
+5. **Vitals**: Weight (kg), A1C (%), Systolic/Diastolic BP
 6. **Exercise**: Type + Duration (minutes)
 
 **Analytics Cards**:

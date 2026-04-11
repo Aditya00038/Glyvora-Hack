@@ -211,13 +211,18 @@ export default function BarcodePage() {
     }
   };
 
-  const lookupBarcode = async (barcode: string, imageDataUrl: string) => {
+  const lookupBarcode = async (barcode: string, imageDataUrl: string, userId?: string) => {
     const cleanBarcode = barcode.trim();
     if (!cleanBarcode) {
       throw new Error('No barcode detected in image.');
     }
 
-    const response = await fetch(`/api/barcode/lookup?barcode=${encodeURIComponent(cleanBarcode)}`);
+    const query = new URLSearchParams({ barcode: cleanBarcode });
+    if (userId) {
+      query.set('userId', userId);
+    }
+
+    const response = await fetch(`/api/barcode/lookup?${query.toString()}`);
     const data = (await response.json()) as LookupResult;
 
     if (!response.ok) {
@@ -236,7 +241,7 @@ export default function BarcodePage() {
       return;
     }
 
-    await saveHistory(data, imageDataUrl);
+      await saveHistory(data, imageDataUrl);
     await loadHistory();
   };
 
@@ -264,7 +269,7 @@ export default function BarcodePage() {
       }
 
       setDetectedBarcode(barcode);
-      await lookupBarcode(barcode, dataUrl);
+      await lookupBarcode(barcode, dataUrl, user?.uid);
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : 'Could not scan barcode from image.');
     } finally {
@@ -278,7 +283,7 @@ export default function BarcodePage() {
     setLookupResult(null);
 
     try {
-      await lookupBarcode(manualBarcode, '');
+      await lookupBarcode(manualBarcode, '', user?.uid);
     } catch (manualError) {
       setError(manualError instanceof Error ? manualError.message : 'Manual lookup failed.');
     }

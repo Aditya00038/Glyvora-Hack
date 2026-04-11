@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
+import { saveMealPlanToFirestore } from '@/actions/meal-plan';
 import { Navigation } from '@/components/Navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -57,6 +58,7 @@ export default function MyMenuPage() {
   const [loading, setLoading] = useState(false);
   const [regeneratingDay, setRegeneratingDay] = useState(false);
   const [regeneratingMealId, setRegeneratingMealId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const currentDay = plan?.days?.[selectedDay];
 
@@ -77,16 +79,30 @@ export default function MyMenuPage() {
 
   const fetchPlan = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const profile = await getProfileForGeneration();
+       const user = auth.currentUser;
       const res = await fetch('/api/meal-plan/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'full', profile }),
+         body: JSON.stringify({ mode: 'full', profile, userId: user?.uid }),
       });
+
+      if (!res.ok) {
+        throw new Error('Meal plan request failed. Please try again.');
+      }
+
       const data = await res.json();
+
+      if (!data?.days || !Array.isArray(data.days) || data.days.length === 0) {
+        throw new Error('Meal planner returned invalid data.');
+      }
+
       setPlan(data);
       setSelectedDay(0);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to generate meal plan.');
     } finally {
       setLoading(false);
     }
@@ -99,23 +115,43 @@ export default function MyMenuPage() {
   useEffect(() => {
     if (!plan || typeof window === 'undefined') return;
     window.localStorage.setItem('glyvora_latest_meal_plan', JSON.stringify(plan));
+    // Save to Firestore for offline reload
+    const user = auth.currentUser;
+    if (user?.uid) {
+      saveMealPlanToFirestore(user.uid, plan, 'current').catch(err =>
+        console.warn('Failed to save meal plan to Firestore:', err)
+      );
+    }
   }, [plan]);
 
   const regenerateDay = async () => {
     if (!plan) return;
     setRegeneratingDay(true);
+    setErrorMessage(null);
     try {
       const profile = await getProfileForGeneration();
+       const user = auth.currentUser;
       const res = await fetch('/api/meal-plan/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'regenerate-day', dayIndex: selectedDay, currentPlan: plan, profile }),
+         body: JSON.stringify({ mode: 'regenerate-day', dayIndex: selectedDay, currentPlan: plan, profile, userId: user?.uid }),
       });
+
+      if (!res.ok) {
+        throw new Error('Failed to regenerate this day.');
+      }
+
       const regenerated = await res.json();
+      if (!regenerated?.days || !Array.isArray(regenerated.days) || regenerated.days.length === 0) {
+        throw new Error('Invalid regenerate-day response.');
+      }
+
       const updated = { ...plan };
       updated.days[selectedDay] = regenerated.days[selectedDay] || regenerated.days[0];
       updated.groceryList = regenerated.groceryList || updated.groceryList;
       setPlan(updated);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to regenerate day.');
     } finally {
       setRegeneratingDay(false);
     }
@@ -127,22 +163,35 @@ export default function MyMenuPage() {
     if (!mealId) return;
 
     setRegeneratingMealId(mealId);
+    setErrorMessage(null);
     try {
       const profile = await getProfileForGeneration();
+       const user = auth.currentUser;
       const res = await fetch('/api/meal-plan/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'regenerate-meal', dayIndex: selectedDay, mealIndex, currentPlan: plan, profile }),
+         body: JSON.stringify({ mode: 'regenerate-meal', dayIndex: selectedDay, mealIndex, currentPlan: plan, profile, userId: user?.uid }),
       });
+
+      if (!res.ok) {
+        throw new Error('Failed to regenerate this meal.');
+      }
+
       const regenerated = await res.json();
+      if (!regenerated?.days || !Array.isArray(regenerated.days) || regenerated.days.length === 0) {
+        throw new Error('Invalid regenerate-meal response.');
+      }
+
       const updated = { ...plan };
       const newDay = regenerated.days[selectedDay] || regenerated.days[0];
-      const nextMeal = newDay?.meals?.[mealIndex];
-      if (nextMeal) {
-        updated.days[selectedDay].meals[mealIndex] = nextMeal;
+      if (newDay) {
+        // Replace the entire day so totals/macros stay consistent after meal regeneration.
+        updated.days[selectedDay] = newDay;
       }
       updated.groceryList = regenerated.groceryList || updated.groceryList;
       setPlan(updated);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to regenerate meal.');
     } finally {
       setRegeneratingMealId(null);
     }
@@ -218,6 +267,11 @@ export default function MyMenuPage() {
           </div>
 
           <div className="mt-4 border-b border-slate-200 pb-4">
+            {errorMessage ? (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {errorMessage}
+              </div>
+            ) : null}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 {plan?.days?.map((d, idx) => (
