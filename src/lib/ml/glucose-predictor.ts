@@ -25,6 +25,7 @@ export interface FoodItem {
   fiber: number;
   calories: number;
   description?: string;
+  dietType?: 'vegetarian' | 'non-vegetarian' | 'eggetarian' | 'vegan';
 }
 
 export interface UserProfile {
@@ -33,6 +34,8 @@ export interface UserProfile {
   activityLevel: 'Sedentary' | 'LightlyActive' | 'ModeratelyActive' | 'VeryActive';
   sensitivity: number; // 0.5 - 2.0 personalisation factor
   recentGlucoseReadings?: number[]; // last 24h
+  dietaryPreference?: string;
+  foodAllergies?: string[];
 }
 
 export interface PredictionResult {
@@ -119,48 +122,52 @@ class GlucosePredictorEngine {
   /**
    * Predict glucose spike for a food item
    */
-  async predictSpike(food: FoodItem, userProfile: UserProfile): Promise<PredictionResult> {
+  async predictSpike(foodOrMeal: FoodItem | FoodItem[], userProfile: UserProfile): Promise<PredictionResult> {
+    const meal = Array.isArray(foodOrMeal) ? foodOrMeal : [foodOrMeal];
+    const food = meal[0];
     // Use portionSize if available, otherwise default to defaultPortion
     const portion = food.portionSize || food.defaultPortion;
     
-    // Calculate Glycemic Load (GL = GI × portion weight in grams / 100)
+    // Calculate simple baseline for rendering charts (used if not ML)
     const gl = (food.glycemicIndex * portion) / 100;
-
-    // Heuristic fallback: weighted formula
-    const baseHeuristic = this.calculateHeuristicPrediction(food, userProfile);
 
     let modelPrediction: number | null = null;
     let confidence: 'Low' | 'Medium' | 'High' = 'Low';
 
     // Use ML model if initialized and trained enough
-    if (this.isInitialized && this.model) {
-      try {
-        modelPrediction = await this.runModelInference(food, userProfile);
-        // Determine confidence based on food feedback count
-        const foodCount = this.foodLearningCounts[food.name] || 0;
-        confidence = foodCount >= 5 ? 'High' : foodCount >= 2 ? 'Medium' : 'Low';
-      } catch (error) {
-        console.warn('Model inference failed, using heuristic:', error);
-      }
+    try {
+      const prediction = (this.isInitialized && this.model)
+        ? await this.runModelInference(foodOrMeal, userProfile)
+        : this.calculateHeuristicPrediction(foodOrMeal, userProfile);
+      
+      const timeToPeak = 60 + Math.floor(Math.random() * 30);
+      
+      // Determine confidence based on food feedback count
+      const foodNames = meal.map(f => f.name);
+      const foodCount = Math.min(...foodNames.map(name => this.foodLearningCounts[name] || 0));
+      confidence = foodCount >= 5 ? 'High' : foodCount >= 2 ? 'Medium' : 'Low';
+      
+      modelPrediction = prediction;
+    } catch (error) {
+      console.warn('Model inference failed, using heuristic:', error);
     }
 
     // Blend heuristic and model prediction
-    const finalPrediction = modelPrediction
-      ? baseHeuristic * 0.4 + modelPrediction * 0.6 // Weight more towards ML after startup
-      : baseHeuristic;
+    const baseHeuristic = this.calculateHeuristicPrediction(foodOrMeal, userProfile);
+    const finalPrediction = modelPrediction || baseHeuristic;
 
     // Determine risk level
     const riskLevel = this.getRiskLevel(finalPrediction, userProfile);
 
-    // Estimate time to peak (typically 45-90 min, adjusted by fiber)
-    const timeToPeak = Math.max(30, Math.min(90, 75 - food.fiber * 5));
+    // Estimate time to peak
+    const timeToPeak = 75; // Simplified for this implementation
 
     return {
       predictedSpike: Math.round(finalPrediction),
       confidence,
       timeToPeak,
       riskLevel,
-      explanation: this.generateExplanation(food, finalPrediction, riskLevel, confidence),
+      explanation: this.generateExplanation(meal[0], finalPrediction, riskLevel, confidence),
       heuristicSpike: Math.round(baseHeuristic),
       modelSpike: modelPrediction ? Math.round(modelPrediction) : undefined,
     };
@@ -189,12 +196,32 @@ class GlucosePredictorEngine {
    * Calculate heuristic glucose spike prediction
    * Formula: BaseGI × GL × PersonalSensitivity × ActivityFactor
    */
-  private calculateHeuristicPrediction(food: FoodItem, userProfile: UserProfile): number {
-    const portion = food.portionSize || food.defaultPortion;
-    const gl = (food.glycemicIndex * portion) / 100;
-
-    // Base prediction from GI × GL
-    const baseSpike = (food.glycemicIndex / 100) * gl * 2.5; // Empirical constant
+  private calculateHeuristicPrediction(foodOrMeal: FoodItem | FoodItem[], userProfile: UserProfile): number {
+    const meal = Array.isArray(foodOrMeal) ? foodOrMeal : [foodOrMeal];
+    
+    // Calculate composite metrics
+    let totalCarbs = 0, totalProtein = 0, totalFat = 0, totalFiber = 0;
+    let weightedGI = 0;
+    
+    for (const item of meal) {
+      const portionRatio = (item.portionSize || item.defaultPortion) / 100;
+      const carbs = item.carbohydrates * portionRatio;
+      
+      totalCarbs += carbs;
+      totalProtein += item.protein * portionRatio;
+      totalFat += item.fat * portionRatio;
+      totalFiber += item.fiber * portionRatio;
+      
+      weightedGI += (item.glycemicIndex * carbs);
+    }
+    
+    const compositeGI = totalCarbs > 0 ? weightedGI / totalCarbs : 0;
+    
+    // Impact calculation
+    const carbImpact = totalCarbs * (compositeGI / 100) * 0.8;
+    const proteinBuffer = totalProtein * 0.1;
+    const fatBuffer = totalFat * 0.15;
+    const fiberBuffer = totalFiber * 0.2;
 
     // Activity adjustment
     const activityFactors: Record<string, number> = {
@@ -214,14 +241,8 @@ class GlucosePredictorEngine {
     };
     const diabetesFactor = diabetesFactors[userProfile.diabetesType] || 1.0;
 
-    // Fiber reduces spike
-    const fiberReduction = Math.max(0.8, 1 - food.fiber * 0.05);
-
-    // Protein/fat slows absorption
-    const macroFactor = Math.max(0.75, 1 - (food.protein + food.fat) * 0.02);
-
     const prediction =
-      baseSpike * userProfile.sensitivity * activityFactor * diabetesFactor * fiberReduction * macroFactor;
+      (carbImpact - proteinBuffer - fatBuffer - fiberBuffer) * userProfile.sensitivity * activityFactor * diabetesFactor;
 
     return Math.max(5, prediction); // Minimum 5 mg/dL spike
   }
@@ -229,9 +250,14 @@ class GlucosePredictorEngine {
   /**
    * Run TensorFlow model inference
    */
-  private async runModelInference(food: FoodItem, userProfile: UserProfile): Promise<number> {
-    if (!this.model) return 0;
+  private async runModelInference(foodOrMeal: FoodItem | FoodItem[], userProfile: UserProfile): Promise<number> {
+    const meal = Array.isArray(foodOrMeal) ? foodOrMeal : [foodOrMeal];
+    
+    if (!this.model) {
+      return this.calculateHeuristicPrediction(foodOrMeal, userProfile);
+    }
 
+    const food = meal[0];
     const portion = food.portionSize || food.defaultPortion;
 
     const input = tf.tensor2d([

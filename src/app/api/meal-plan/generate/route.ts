@@ -213,6 +213,9 @@ function convertGenkitToDayPlan(genkitPlan: any): MealPlanResponse {
         ...nutrition,
         ingredients: buildIngredientsFromDescription(type, String(genkitMeal?.name || type), genkitMeal?.description),
         recipe: buildRecipeSteps(genkitMeal?.description, genkitMeal?.estimatedSpike),
+        estimatedSpike: genkitMeal?.estimatedSpike,
+        macronutrientRatio: genkitMeal?.macronutrientRatio,
+        metabolicImpact: genkitMeal?.metabolicImpact,
       } as Meal;
     });
 

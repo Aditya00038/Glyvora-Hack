@@ -10,7 +10,7 @@ import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { aiMetabolicCoach, type CoachInput } from '@/ai/flows/ai-metabolic-coach';
 
 // Initialize Firebase in server context
-let firebaseApp: FirebaseApp;
+let firebaseApp: FirebaseApp | null = null;
 try {
   const apps = getApps();
   firebaseApp = apps.length > 0 ? getApp() : initializeApp({
@@ -29,6 +29,7 @@ try {
  * Assemble user metabolic profile from Firestore
  */
 async function getUserProfile(userId: string) {
+  if (!firebaseApp) return null;
   try {
     const firestore = getFirestore(firebaseApp);
     const userRef = doc(firestore, 'users', userId);
@@ -47,6 +48,7 @@ async function getUserProfile(userId: string) {
       diabetesType: data?.medicalConditions?.includes('Type 2') ? 'Type2' : 'PreDiabetic',
       activityLevel: data?.activityLevel || 'Moderate',
       dietaryPreference: data?.dietaryPreference || 'Vegetarian',
+      region: data?.region || 'Other',
       baselineGlucose: data?.baselineGlucose || 95,
     };
   } catch (error) {
@@ -59,12 +61,13 @@ async function getUserProfile(userId: string) {
  * Get recent logbook entries (last 7 days) to identify patterns
  */
 async function getRecentLogbookEntries(userId: string, days: number = 7) {
+  if (!firebaseApp) return [];
   try {
     const firestore = getFirestore(firebaseApp);
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - days);
 
-    const logsRef = collection(firestore, 'users', userId, 'logbook');
+    const logsRef = collection(firestore, 'users', userId, 'logbookEntries');
     const q = query(
       logsRef,
       where('recordedAt', '>=', sevenDaysAgo.toISOString()),
@@ -143,6 +146,7 @@ User Profile:
 - Diabetes Type: ${profile?.diabetesType || 'PreDiabetic'}
 - Activity Level: ${profile?.activityLevel || 'Moderate'}
 - Dietary Preference: ${profile?.dietaryPreference || 'Vegetarian'}
+- Regional Cuisine: ${profile?.region || 'Other'}
 - Baseline Glucose: ${profile?.baselineGlucose || 95} mg/dL
 
 Recent Patterns (last 7 days):

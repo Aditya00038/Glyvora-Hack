@@ -21,6 +21,18 @@ export function GoogleTranslate() {
         },
         'google_translate_element'
       );
+      
+      // Auto-translate to user's preferred language (Marathi requested)
+      setTimeout(() => {
+        const select = document.querySelector('.goog-te-combo') as HTMLSelectElement;
+        if (select) {
+          const pref = localStorage.getItem('preferredLang') || 'mr';
+          if (pref !== 'en') {
+            select.value = pref;
+            select.dispatchEvent(new Event('change'));
+          }
+        }
+      }, 1000); // Give the widget time to render
     };
   }, []);
 

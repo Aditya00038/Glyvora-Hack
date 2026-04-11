@@ -4,13 +4,14 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { useEffect } from 'react';
-import { useUser } from '@/firebase';
+import { useEffect, useMemo, useState } from 'react';
+import { useFirestore, useUser } from '@/firebase';
 import { Navigation } from '@/components/Navigation';
 import { MetabolicSimulator } from '@/components/dashboard/metabolic-simulator';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import type { UserProfile } from '@/lib/ml/glucose-predictor';
+import { type UserProfile, getGlucosePredictorInstance } from '@/lib/ml/glucose-predictor';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import {
   Activity,
   Barcode,
@@ -54,15 +55,153 @@ const DEFAULT_USER_PROFILE: UserProfile = {
   sensitivity: 1.0,
 };
 
+type LogbookEntry = {
+  id: string;
+  entryType: 'glucose' | 'food' | 'insulin' | 'meds' | 'vitals' | 'exercise';
+  recordedAt: string;
+  glucoseValue?: string;
+};
+
+type DashboardMetrics = {
+  glucoseStability: number;
+  stabilityDelta: number | null;
+  mealsLogged3d: number;
+  coachContextPoints7d: number;
+  nextCheckInLabel: string;
+  nextCheckInHint: string;
+};
+
+const DEFAULT_METRICS: DashboardMetrics = {
+  glucoseStability: 0,
+  stabilityDelta: null,
+  mealsLogged3d: 0,
+  coachContextPoints7d: 0,
+  nextCheckInLabel: 'Not Set',
+  nextCheckInHint: 'Configure alerts in Notifications',
+};
+
+function toMgDl(value?: string): number | null {
+  const parsed = Number.parseFloat(value || '');
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed <= 25 ? parsed * 18 : parsed;
+}
+
+function inRangePercent(values: number[]): number {
+  if (!values.length) return 0;
+  const inRange = values.filter((v) => v >= 72 && v <= 126).length;
+  return Math.round((inRange / values.length) * 100);
+}
+
+function computeDashboardMetrics(entries: LogbookEntry[], userData: Record<string, any>): DashboardMetrics {
+  const now = new Date();
+  const threeDaysAgo = new Date(now);
+  threeDaysAgo.setDate(now.getDate() - 3);
+
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(now.getDate() - 7);
+
+  const fourteenDaysAgo = new Date(now);
+  fourteenDaysAgo.setDate(now.getDate() - 14);
+
+  const mealsLogged3d = entries.filter((entry) => {
+    return entry.entryType === 'food' && new Date(entry.recordedAt) >= threeDaysAgo;
+  }).length;
+
+  const recentGlucose = entries.filter((entry) => {
+    return entry.entryType === 'glucose' && new Date(entry.recordedAt) >= sevenDaysAgo;
+  });
+  const previousGlucose = entries.filter((entry) => {
+    const at = new Date(entry.recordedAt);
+    return entry.entryType === 'glucose' && at >= fourteenDaysAgo && at < sevenDaysAgo;
+  });
+
+  const recentValues = recentGlucose.map((entry) => toMgDl(entry.glucoseValue)).filter((v): v is number => v !== null);
+  const previousValues = previousGlucose.map((entry) => toMgDl(entry.glucoseValue)).filter((v): v is number => v !== null);
+
+  const glucoseStability = inRangePercent(recentValues);
+  const previousStability = inRangePercent(previousValues);
+  const stabilityDelta = previousValues.length ? glucoseStability - previousStability : null;
+
+  const coachContextPoints7d = entries.filter((entry) => {
+    return new Date(entry.recordedAt) >= sevenDaysAgo;
+  }).length;
+
+  const smsEnabled = Boolean(userData.smsEnabled);
+  const low = Number(userData.glucoseLowThreshold || 70);
+  const high = Number(userData.glucoseHighThreshold || 140);
+
+  return {
+    glucoseStability,
+    stabilityDelta,
+    mealsLogged3d,
+    coachContextPoints7d,
+    nextCheckInLabel: smsEnabled ? 'Alerts On' : 'Alerts Off',
+    nextCheckInHint: smsEnabled
+      ? `Thresholds ${low}-${high} mg/dL`
+      : 'Enable SMS alerts in Notifications',
+  };
+}
+
 export default function DashboardPage() {
   const { user, isUserLoading } = useUser();
+  const firestore = useFirestore();
   const router = useRouter();
+  const [entries, setEntries] = useState<LogbookEntry[]>([]);
+  const [userData, setUserData] = useState<Record<string, any>>({});
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [learningStats, setLearningStats] = useState<{ totalDataPoints: number; uniqueFoods: number; averageConfidence: string } | null>(null);
+
+  // Poll learning stats once predictor is ready (set by MetabolicSimulator)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const predictor = getGlucosePredictorInstance();
+      if (predictor) {
+        setLearningStats(predictor.getLearningStats());
+      }
+    }, 3000); // delay to let MetabolicSimulator init
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!isUserLoading && !user) {
       router.push('/login');
     }
   }, [isUserLoading, router, user]);
+
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      if (!user || !firestore) {
+        setMetricsLoading(false);
+        return;
+      }
+
+      try {
+        const [userSnap, logsSnap] = await Promise.all([
+          getDoc(doc(firestore, 'users', user.uid)),
+          getDocs(collection(firestore, 'users', user.uid, 'logbookEntries')),
+        ]);
+
+        const logs = logsSnap.docs.map((docItem) => ({
+          id: docItem.id,
+          ...(docItem.data() as Omit<LogbookEntry, 'id'>),
+        }));
+        logs.sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+
+        setEntries(logs);
+        setUserData(userSnap.exists() ? userSnap.data() : {});
+      } catch (error) {
+        console.error('Failed to load dashboard metrics:', error);
+        setEntries([]);
+        setUserData({});
+      } finally {
+        setMetricsLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, [user, firestore]);
+
+  const metrics = useMemo(() => computeDashboardMetrics(entries, userData), [entries, userData]);
 
   if (isUserLoading || !user) {
     return <div className="min-h-screen bg-[#F5F3F0]" />;
@@ -87,8 +226,14 @@ export default function DashboardPage() {
                 <p className="text-xs font-medium text-slate-500">Glucose Stability</p>
                 <HeartPulse className="h-4 w-4 text-rose-500" />
               </div>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">86%</p>
-              <p className="mt-1 text-xs text-emerald-600">+4% this week</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{metrics.glucoseStability}%</p>
+              <p className={`mt-1 text-xs ${metrics.stabilityDelta !== null && metrics.stabilityDelta >= 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                {metricsLoading
+                  ? 'Loading from recent logs...'
+                  : metrics.stabilityDelta === null
+                    ? 'Need 2 weeks of glucose logs for trend'
+                    : `${metrics.stabilityDelta >= 0 ? '+' : ''}${metrics.stabilityDelta}% vs previous 7 days`}
+              </p>
             </Card>
 
             <Card className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
@@ -96,17 +241,17 @@ export default function DashboardPage() {
                 <p className="text-xs font-medium text-slate-500">Meals Logged</p>
                 <Utensils className="h-4 w-4 text-orange-500" />
               </div>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">12</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{metrics.mealsLogged3d}</p>
               <p className="mt-1 text-xs text-slate-500">In the last 3 days</p>
             </Card>
 
             <Card className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-slate-500">Coach Responses</p>
+                <p className="text-xs font-medium text-slate-500">Coach Context</p>
                 <MessageCircle className="h-4 w-4 text-blue-500" />
               </div>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">24/7</p>
-              <p className="mt-1 text-xs text-slate-500">Average reply under 30 sec</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{metrics.coachContextPoints7d}</p>
+              <p className="mt-1 text-xs text-slate-500">Recent log points available to AI</p>
             </Card>
 
             <Card className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
@@ -114,8 +259,8 @@ export default function DashboardPage() {
                 <p className="text-xs font-medium text-slate-500">Next Check-in</p>
                 <Clock3 className="h-4 w-4 text-violet-500" />
               </div>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">8:30 PM</p>
-              <p className="mt-1 text-xs text-slate-500">Evening reminder enabled</p>
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{metrics.nextCheckInLabel}</p>
+              <p className="mt-1 text-xs text-slate-500">{metrics.nextCheckInHint}</p>
             </Card>
           </div>
 
@@ -197,11 +342,6 @@ export default function DashboardPage() {
                       <div>
                         <h4 className="text-base font-semibold text-slate-900">{card.title}</h4>
                         <p className="mt-1 text-xs text-slate-600">{card.description}</p>
-
-          {/* Metabolic Simulator - Local ML Glucose Prediction */}
-          <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-            <MetabolicSimulator userProfile={DEFAULT_USER_PROFILE} />
-          </motion.section>
                       </div>
                       <ChevronRight className="mt-1 h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-1" />
                     </div>
@@ -210,6 +350,33 @@ export default function DashboardPage() {
               );
             })}
           </div>
+
+          {/* #9 — Learning Stats Widget */}
+          {learningStats && learningStats.totalDataPoints > 0 && (
+            <Card className="rounded-2xl border border-violet-200 bg-violet-50 p-3.5">
+              <p className="text-xs font-medium text-violet-700">🧠 System Learning</p>
+              <p className="mt-1 text-sm text-violet-900">
+                Personalised model has <strong>{learningStats.totalDataPoints} data points</strong> across{' '}
+                <strong>{learningStats.uniqueFoods} foods</strong>. Confidence: {learningStats.averageConfidence}.
+              </p>
+            </Card>
+          )}
+
+          {/* Metabolic Simulator - Dedicated Full-Width Container */}
+          <motion.section 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ delay: 0.3 }}
+            className="col-span-full w-full mt-6 pb-12"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-1.5 rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">
+                <HeartPulse className="h-4 w-4" />
+                Type 2 Diabetes Profile Active
+              </div>
+            </div>
+            <MetabolicSimulator userProfile={DEFAULT_USER_PROFILE} />
+          </motion.section>
           </div>
         </main>
     </div>

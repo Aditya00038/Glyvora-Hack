@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, Printer, RefreshCw, ShoppingCart } from 'lucide-react';
+import { Loader2, Printer, RefreshCw, ShoppingCart, HeartPulse } from 'lucide-react';
 
 type Meal = {
   id: string;
@@ -24,6 +24,9 @@ type Meal = {
   fat: number;
   ingredients: string[];
   recipe: string[];
+  estimatedSpike?: number;
+  macronutrientRatio?: string;
+  metabolicImpact?: string;
 };
 
 type DayPlan = {
@@ -321,6 +324,19 @@ export default function MyMenuPage() {
                       <div><p className="font-semibold text-amber-600">{meal.fat}g</p><p className="text-xs text-slate-500">🥑 Fat</p></div>
                     </div>
                   </div>
+
+                  {meal.metabolicImpact && (
+                    <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 text-sm">
+                      <div className="mb-1 flex items-center gap-1.5 font-semibold text-indigo-700">
+                        <HeartPulse className="h-4 w-4" /> Type 2 Impact
+                      </div>
+                      <p className="text-indigo-900 leading-relaxed text-xs">{meal.metabolicImpact}</p>
+                      <div className="mt-2 flex items-center gap-2 text-xs">
+                        {meal.estimatedSpike && <Badge variant="outline" className="bg-white text-indigo-600 border-indigo-200">~{meal.estimatedSpike} mg/dL Spike</Badge>}
+                        {meal.macronutrientRatio && <Badge variant="outline" className="bg-white text-indigo-600 border-indigo-200">Ratio: {meal.macronutrientRatio}</Badge>}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mt-4 flex items-center justify-between gap-2">
                     <button className="text-sm text-slate-600 hover:text-slate-900" onClick={() => setSelectedMeal(meal)}>

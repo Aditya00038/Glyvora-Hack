@@ -8,6 +8,7 @@ import {
   BookOpen,
   ChevronRight,
   CreditCard,
+  Globe,
   Home,
   LayoutDashboard,
   LogOut,
@@ -31,6 +32,21 @@ import { useAuth, useFirestore, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
+import { triggerTranslation } from '@/lib/translate-utils';
+
+const languages = [
+  { code: 'en', label: 'English' },
+  { code: 'hi', label: 'हिंदी' },
+  { code: 'mr', label: 'मराठी' },
+  { code: 'gu', label: 'ગુજરાતી' },
+  { code: 'ta', label: 'தமிழ்' },
+  { code: 'te', label: 'తెలుగు' },
+  { code: 'kn', label: 'ಕನ್ನಡ' },
+  { code: 'ml', label: 'മലയാളം' },
+  { code: 'bn', label: 'বাংলা' },
+  { code: 'pa', label: 'ਪੰਜਾਬੀ' },
+  { code: 'ur', label: 'اردو' },
+];
 
 const wellnessItems = [
   { href: '/dashboard', label: 'Home', icon: Home },
@@ -161,6 +177,26 @@ export function Navigation() {
             />
           </>
         ) : null}
+
+        {/* Language Switcher */}
+        <div className="my-2 border-t border-slate-200" />
+        <div className="px-3 py-1.5">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-1">
+            <Globe className="h-3 w-3" /> Language
+          </div>
+          <select
+            onChange={(e) => {
+              localStorage.setItem('preferredLang', e.target.value);
+              triggerTranslation(e.target.value);
+            }}
+            defaultValue={typeof window !== 'undefined' ? localStorage.getItem('preferredLang') || 'en' : 'en'}
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 transition-colors cursor-pointer"
+          >
+            {languages.map((lang) => (
+              <option key={lang.code} value={lang.code}>{lang.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="mt-auto pt-5">

@@ -14,6 +14,7 @@ const MealPlanInputSchema = z.object({
   preferences: z.string().optional().default('Indian vegetarian'),
   goals: z.string().optional().default('Minimize post-prandial excursions'),
   isCorrectionMode: z.boolean().optional().default(false),
+  diabetesType: z.string().optional().default('Type 2'),
 });
 
 const MealPlanOutputSchema = z.object({
@@ -28,6 +29,7 @@ const MealPlanOutputSchema = z.object({
       estimatedSpike: z.number().describe('Predicted mg/dL increase.'),
       stabilityScore: z.number().describe('Meal stability rating (1-10).'),
       macronutrientRatio: z.string().describe('Fiber:Protein:Carb ratio.'),
+      metabolicImpact: z.string().describe('Explicit explanation of how this meal controls Type 2 glucose levels (e.g. "Soluble fiber slows digestion").'),
     })),
   })),
 });
@@ -39,28 +41,28 @@ export async function generateMetabolicMealPlan(input: z.infer<typeof MealPlanIn
 const mealPlanPrompt = ai.definePrompt({
   name: 'mealPlanPrompt',
   input: { schema: MealPlanInputSchema },
-  output: { schema: MealPlanOutputSchema },
+  output: { format: 'json', schema: MealPlanOutputSchema },
   model: 'googleai/gemini-2.5-flash',
-  prompt: `You are the Glyvora Nutritionist Engine. 
-Generate a 7-day metabolic meal plan for a user with {{{userSensitivity}}} sensitivity.
+  prompt: `You are the Glyvora Medical Nutritionist Engine. 
+Create a highly specialized 7-day metabolic meal plan for a user specifically managing {{{diabetesType}}} Diabetes.
+The user has a metabolic sensitivity of {{{userSensitivity}}}.
 
 USER CONTEXT:
+- Condition: {{{diabetesType}}} Diabetes
 - Sensitivity: {{{userSensitivity}}}
 - Preferences: {{{preferences}}}
-- Recent History: {{#each recentHistory}}- {{{this}}}{{/each}}
+- Goals: {{{goals}}}
+- Recent Historical Spikes: {{#each recentHistory}}- {{{this}}}{{/each}}
 
-CONSTRAINTS:
-1. Prioritize Indian cuisine.
-2. Focus on high fiber-to-carb ratios.
-3. Every meal must include protein/fat pairing to slow glucose absorption.
-4. Ensure VARIETY. Do not repeat the same meals across days.
-{{#if isCorrectionMode}}
-🚨 URGENT CORRECTION MODE ACTIVE 🚨
-The user recently experienced a severe spike (> 40 mg/dL).
-5. The FIRST day of this plan MUST strictly consist of ONLY low-GI, ultra-high-protein meals. Exclude all refined carbohydrates completely to stabilize baseline glucose.
-{{/if}}
+CLINICAL CONSTRAINTS FOR TYPE 2 DIABETES:
+1. Prioritize Indian cuisine styles but absolutely minimize refined carbohydrates (white rice, maida).
+2. Every single meal MUST have a high fiber-to-carb ratio.
+3. Every meal must pair carbohydrates with healthy fats and lean protein to blunt post-prandial glucose excursions.
+4. Keep the 'estimatedSpike' dynamically appropriate (<30mg/dL for most meals).
+5. The 'metabolicImpact' field must explicitly tell the user why this specific meal aids their Type 2 Diabetes management.
+6. Ensure VARIETY across the 7 days. Do not repeat the same meals.
 
-Return valid JSON.`,
+Return ONLY raw JSON matching the required schema. Do not wrap in markdown \`\`\` blocks.`,
 });
 
 const generateMetabolicMealPlanFlow = ai.defineFlow(
@@ -70,11 +72,15 @@ const generateMetabolicMealPlanFlow = ai.defineFlow(
     outputSchema: MealPlanOutputSchema,
   },
   async (input) => {
+    console.log("Calling Genkit for specialized Type 2 Meal Plan...", input);
     try {
-      const { output } = await mealPlanPrompt(input);
-      if (!output) throw new Error("Metabolic Grid failed to compute plan.");
-      return output;
+      const result = await mealPlanPrompt(input);
+      if (!result || !result.output) {
+        throw new Error("Metabolic Grid failed to compute plan: No output returned.");
+      }
+      return result.output;
     } catch (error: any) {
+      console.error("Genkit strictly failed (maybe rate limit or format). Falling back to dynamic Type 2 Deterministic Matrix.", error);
       // High-fidelity deterministic fallback with 7-day variety
       const mult = input.userSensitivity === 'high' ? 1.5 : input.userSensitivity === 'low' ? 0.6 : 1.0;
       
@@ -148,7 +154,8 @@ const generateMetabolicMealPlanFlow = ai.defineFlow(
             description: m.desc,
             estimatedSpike: Math.round(m.spike * mult),
             stabilityScore: 9,
-            macronutrientRatio: m.ratio
+            macronutrientRatio: m.ratio,
+            metabolicImpact: "Rich in complex fiber and protein buffers to minimize Type 2 insulin resistance spikes in the morning.",
           }))
         })),
       };

@@ -60,6 +60,27 @@ export function MetabolicSimulator({ userProfile }: { userProfile: UserProfile }
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
+  const [swapResult, setSwapResult] = useState<any | null>(null);
+  const [loadingSwap, setLoadingSwap] = useState(false);
+
+  const handleGetSwap = async () => {
+    if (!state.selectedFood || !state.prediction) return;
+    setLoadingSwap(true);
+    const res = await fetch('/api/suggest-swap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mealName: state.selectedFood.name,
+        detectedItems: [state.selectedFood.category],
+        predictedSpike: state.prediction.predictedSpike,
+        userSensitivity: state.prediction.riskLevel === 'Risk' ? 'high' : 'medium',
+      }),
+    });
+    const data = await res.json();
+    setSwapResult(data);
+    setLoadingSwap(false);
+  };
+
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -168,11 +189,22 @@ export function MetabolicSimulator({ userProfile }: { userProfile: UserProfile }
   }, [state.prediction, userProfile.baselineGlucose]);
 
   const filteredFoods = useMemo(() => {
-    return (foodDatabase.foods as FoodItem[]).filter((food) =>
-      food.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      food.category.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [searchQuery]);
+    const currentDiet = userProfile.dietaryPreference?.toLowerCase() || 'no preference';
+    
+    return (foodDatabase.foods as FoodItem[]).filter((food) => {
+      // Enforce dietary constraints
+      if (currentDiet === 'vegetarian') {
+        if (food.dietType === 'non-vegetarian' || food.dietType === 'eggetarian') return false;
+      } else if (currentDiet === 'vegan') {
+        if (food.dietType !== 'vegan') return false;
+      }
+
+      return (
+        food.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        food.category.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    });
+  }, [searchQuery, userProfile.dietaryPreference]);
 
   const handleSelectFood = (food: FoodItem) => {
     setState((prev) => ({
@@ -213,7 +245,7 @@ export function MetabolicSimulator({ userProfile }: { userProfile: UserProfile }
               >
                 <Search className="w-4 h-4 text-slate-400" />
                 <span className="flex-1 text-left text-slate-600">
-                  {state.selectedFood ? state.selectedFood.name : 'Search 40+ Indian foods...'}
+                  {state.selectedFood ? state.selectedFood.name : 'Search 250+ Indian foods...'}
                 </span>
                 <ChevronDown className={`w-4 h-4 transition-transform ${state.searchOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -297,6 +329,12 @@ export function MetabolicSimulator({ userProfile }: { userProfile: UserProfile }
                 <div className="text-sm">
                   <p className="text-slate-500">Glycemic Index</p>
                   <p className="font-semibold text-slate-900">{state.selectedFood.glycemicIndex}</p>
+                </div>
+                <div className="text-sm">
+                  <p className="text-slate-500">Glycaemic Load</p>
+                  <p className="font-semibold text-slate-900">
+                    {Math.round((state.selectedFood.glycemicIndex * (state.selectedFood.carbohydrates * state.portionSize / state.selectedFood.defaultPortion)) / 100)}
+                  </p>
                 </div>
                 <div className="text-sm">
                   <p className="text-slate-500">Default Portion</p>
@@ -400,13 +438,30 @@ export function MetabolicSimulator({ userProfile }: { userProfile: UserProfile }
 
                 {/* Confidence and Learning */}
                 {state.learningStats && (
-                  <div className="text-xs text-slate-600 bg-white/30 rounded-lg p-2">
+                  <div className="text-xs text-slate-600 bg-white/30 rounded-lg p-2 mb-4">
                     <p>
                       <strong>System learning:</strong> {state.learningStats.dataPoints} recorded instances of this food.{' '}
                       {state.learningStats.dataPoints >= 5
                         ? '✓ Personalised predictions active'
                         : 'Log more meals to improve accuracy.'}
                     </p>
+                  </div>
+                )}
+
+                {state.prediction && state.prediction.riskLevel !== 'Safe' && (
+                  <div className="mt-3">
+                    <Button onClick={handleGetSwap} disabled={loadingSwap} variant="outline" className="w-full rounded-xl border-amber-300 text-amber-700 hover:bg-amber-50">
+                      {loadingSwap ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : '🔄'} Get Safer Swap
+                    </Button>
+                    {swapResult && (
+                      <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                        <p className="font-semibold text-emerald-800">✅ {swapResult.optimizedMealName}</p>
+                        <p className="text-emerald-700">Spike reduced by {swapResult.reductionPercentage}% → ~{swapResult.optimizedSpikeMgDl} mg/dL</p>
+                        <ul className="mt-2 space-y-1 text-slate-700">
+                          {swapResult.suggestions.map((tip: string, i: number) => <li key={i}>• {tip}</li>)}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
               </motion.div>

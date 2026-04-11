@@ -4,6 +4,7 @@ import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
 import { PWARegister } from '@/components/pwa-register';
+import { GoogleTranslate } from '@/components/GoogleTranslate';
 
 export const metadata: Metadata = {
   title: 'Glyvora - Metabolic Decision Engine',
@@ -43,6 +44,7 @@ export default function RootLayout({
             {children}
             <PWARegister />
             <Toaster />
+            <GoogleTranslate />
           </FirebaseClientProvider>
         </ThemeProvider>
       </body>

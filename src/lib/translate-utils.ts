@@ -1,9 +1,5 @@
 'use client';
 
-/**
- * Programmatically triggers the Google Translate engine to switch languages.
- * @param lang The language code (e.g., 'en', 'hi', 'mr')
- */
 export const triggerTranslation = (lang: string) => {
   const select = document.querySelector('.goog-te-combo') as HTMLSelectElement;
 

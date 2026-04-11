@@ -11,7 +11,6 @@ import {
   orderBy,
   limit,
   setDoc,
-  Timestamp,
 } from 'firebase/firestore';
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { generateMetabolicMealPlan } from '@/ai/flows/generate-metabolic-meal-plan';
@@ -32,7 +31,7 @@ try {
   console.warn('Firebase init warning:', error);
 }
 
-const db = getFirestore(firebaseApp as FirebaseApp);
+const db = firebaseApp ? getFirestore(firebaseApp) : null;
 
 interface UserProfile {
   age?: number;
@@ -47,15 +46,15 @@ interface UserProfile {
 
 interface LogbookEntry {
   id: string;
-  food: string;
-  mealType: string;
-  portionSize?: number;
-  glucoseBefore?: number;
-  glucoseAfter?: number;
-  glucose_peak?: number;
-  recorded_at?: string;
-  timestamp?: Timestamp | string;
+  entryType: 'glucose' | 'food' | 'insulin' | 'meds' | 'vitals' | 'exercise';
+  recordedAt: string;
   notes?: string;
+  glucoseValue?: string;
+  glucoseContext?: string;
+  carbs?: string;
+  protein?: string;
+  fat?: string;
+  calories?: string;
 }
 
 interface MealHistory {
@@ -65,6 +64,7 @@ interface MealHistory {
 }
 
 async function getUserProfile(userId: string): Promise<UserProfile> {
+  if (!db) return {};
   try {
     const snap = await getDoc(doc(db, 'users', userId));
     if (!snap.exists()) return {};
@@ -86,14 +86,15 @@ async function getUserProfile(userId: string): Promise<UserProfile> {
 }
 
 async function getRecentLogbookEntries(userId: string, days: number = 7): Promise<LogbookEntry[]> {
+  if (!db) return [];
   try {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
     const q = query(
-      collection(db, 'users', userId, 'logbook'),
-      where('timestamp', '>=', Timestamp.fromDate(cutoffDate)),
-      orderBy('timestamp', 'desc'),
+      collection(db, 'users', userId, 'logbookEntries'),
+      where('recordedAt', '>=', cutoffDate.toISOString()),
+      orderBy('recordedAt', 'desc'),
       limit(100)
     );
 
@@ -109,17 +110,21 @@ async function getRecentLogbookEntries(userId: string, days: number = 7): Promis
 }
 
 function computeUserSensitivity(entries: LogbookEntry[]): string {
-  if (entries.length === 0) return 'medium';
-
-  const deltas = entries
-    .map(e => {
-      const before = e.glucoseBefore || 0;
-      const after = e.glucoseAfter || e.glucose_peak || 0;
-      return Math.abs(after - before);
+  const glucoseReadings = entries
+    .filter((entry) => entry.entryType === 'glucose' && entry.glucoseValue)
+    .map((entry) => {
+      const parsed = Number.parseFloat(entry.glucoseValue || '0');
+      // Values <= 25 are assumed mmol/L and converted to mg/dL.
+      return parsed <= 25 ? parsed * 18 : parsed;
     })
-    .filter(d => d > 0);
+    .filter((value) => Number.isFinite(value) && value > 0);
 
-  if (deltas.length === 0) return 'medium';
+  if (glucoseReadings.length < 2) return 'medium';
+
+  const deltas: number[] = [];
+  for (let i = 1; i < glucoseReadings.length; i += 1) {
+    deltas.push(Math.abs(glucoseReadings[i] - glucoseReadings[i - 1]));
+  }
 
   const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
   const maxDelta = Math.max(...deltas);
@@ -132,22 +137,26 @@ function computeUserSensitivity(entries: LogbookEntry[]): string {
 }
 
 function findSafeFoods(entries: LogbookEntry[], threshold: number = 25): string[] {
-  const foodDeltas = new Map<string, number[]>();
+  const foodEntries = entries.filter((entry) => entry.entryType === 'food');
+  const foodCarbs = new Map<string, number[]>();
 
-  entries.forEach(entry => {
-    if (!entry.food) return;
-    const delta = Math.abs((entry.glucoseAfter || entry.glucose_peak || 0) - (entry.glucoseBefore || 0));
-    if (!foodDeltas.has(entry.food)) {
-      foodDeltas.set(entry.food, []);
+  foodEntries.forEach((entry) => {
+    const label = entry.notes?.trim() || `${entry.carbs || '0'}g carb meal`;
+    const carbs = Number.parseFloat(entry.carbs || '0');
+    if (!foodCarbs.has(label)) {
+      foodCarbs.set(label, []);
     }
-    foodDeltas.get(entry.food)!.push(delta);
+    if (Number.isFinite(carbs) && carbs > 0) {
+      foodCarbs.get(label)!.push(carbs);
+    }
   });
 
   const safeFoods: string[] = [];
-  foodDeltas.forEach((deltas, food) => {
-    const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
-    if (avgDelta < threshold) {
-      safeFoods.push(food);
+  foodCarbs.forEach((carbValues, label) => {
+    if (!carbValues.length) return;
+    const avgCarbs = carbValues.reduce((a, b) => a + b, 0) / carbValues.length;
+    if (avgCarbs <= threshold) {
+      safeFoods.push(label);
     }
   });
 
@@ -155,41 +164,47 @@ function findSafeFoods(entries: LogbookEntry[], threshold: number = 25): string[
 }
 
 function buildRecentHistory(entries: LogbookEntry[]): string[] {
-  const historyMap = new Map<string, { deltas: number[]; count: number }>();
+  const historyMap = new Map<string, { carbs: number[]; count: number }>();
 
-  entries.forEach(entry => {
-    if (!entry.food) return;
-    const delta = Math.abs((entry.glucoseAfter || entry.glucose_peak || 0) - (entry.glucoseBefore || 0));
-    const existing = historyMap.get(entry.food) || { deltas: [], count: 0 };
-    existing.deltas.push(delta);
+  entries.forEach((entry) => {
+    if (entry.entryType !== 'food') return;
+    const label = entry.notes?.trim() || `${entry.carbs || '0'}g carb meal`;
+    const carbs = Number.parseFloat(entry.carbs || '0');
+    const existing = historyMap.get(label) || { carbs: [], count: 0 };
+    if (Number.isFinite(carbs) && carbs > 0) {
+      existing.carbs.push(carbs);
+    }
     existing.count += 1;
-    historyMap.set(entry.food, existing);
+    historyMap.set(label, existing);
   });
 
   const history: string[] = [];
-  historyMap.forEach((data, food) => {
-    const avgDelta = data.deltas.reduce((a, b) => a + b, 0) / data.deltas.length;
-    const assessment = avgDelta < 20 ? 'low spike' : avgDelta < 35 ? 'moderate spike' : 'high spike';
-    history.push(`${food}: ${assessment} (~${Math.round(avgDelta)} mg/dL, eaten ${data.count}x)`);
+  historyMap.forEach((data, label) => {
+    const avgCarbs = data.carbs.length
+      ? data.carbs.reduce((a, b) => a + b, 0) / data.carbs.length
+      : 0;
+    const assessment = avgCarbs < 20 ? 'low carb load' : avgCarbs < 40 ? 'moderate carb load' : 'high carb load';
+    history.push(`${label}: ${assessment} (~${Math.round(avgCarbs)}g carbs, logged ${data.count}x)`);
   });
 
   return history.slice(0, 15); // Top 15 foods
 }
 
 function detectCorrectionMode(entries: LogbookEntry[]): boolean {
-  // If user had a spike > 50 mg/dL in the last 24 hours, activate correction mode
+  // If user had any high glucose reading in the last 24h, activate correction mode.
   const oneDayAgo = new Date();
   oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
-  return entries.some(entry => {
-    const entryDate = entry.timestamp instanceof Timestamp 
-      ? entry.timestamp.toDate() 
-      : new Date(entry.timestamp || 0);
-    
+  return entries.some((entry) => {
+    if (entry.entryType !== 'glucose' || !entry.glucoseValue || !entry.recordedAt) {
+      return false;
+    }
+    const entryDate = new Date(entry.recordedAt);
     if (entryDate < oneDayAgo) return false;
 
-    const delta = Math.abs((entry.glucoseAfter || entry.glucose_peak || 0) - (entry.glucoseBefore || 0));
-    return delta > 50;
+    const parsed = Number.parseFloat(entry.glucoseValue);
+    const mgDl = parsed <= 25 ? parsed * 18 : parsed;
+    return Number.isFinite(mgDl) && mgDl >= 180;
   });
 }
 
@@ -221,6 +236,7 @@ export async function callMealPlanGenerator(
       preferences,
       goals,
       isCorrectionMode,
+      diabetesType: profile.diabetesType || 'Type 2 Diabetes',
     };
 
     // Call Genkit flow
@@ -253,6 +269,9 @@ export async function callMealPlanGenerator(
     planName: string = 'current'
   ): Promise<{ success: boolean; error?: string }> {
     try {
+        if (!db) {
+          return { success: false, error: 'Firestore is not initialized' };
+        }
       const today = new Date().toISOString().split('T')[0];
       await setDoc(
         doc(db, 'users', userId, 'mealPlans', planName || today),

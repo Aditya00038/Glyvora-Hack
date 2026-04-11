@@ -19,6 +19,7 @@ interface ProfileData {
   activityLevel: string;
   healthGoal: string[];
   dietaryPreference: string;
+  region: string;
   foodAllergies: string;
   mealTiming: string;
   medicalConditions: string;
@@ -32,6 +33,7 @@ const steps = [
   { id: 'activityLevel', title: 'What\'s your activity level?', description: 'This helps us calculate your calorie needs' },
   { id: 'healthGoal', title: 'What are your health goals?', description: 'Select all that apply to you' },
   { id: 'dietaryPreference', title: 'What\'s your dietary preference?', description: 'Help us suggest appropriate meal plans' },
+  { id: 'region', title: 'What region is your food from?', description: 'We use this to personalise your meal plans with regional cuisine' },
   { id: 'foodAllergies', title: 'Do you have any food allergies or restrictions?', description: 'Keep your meals safe and enjoyable' },
   { id: 'mealTiming', title: 'What\'s your typical meal timing?', description: 'This helps us customize your meal plan' },
   { id: 'medicalConditions', title: 'Do you have any medical conditions?', description: 'Especially important if you have diabetes' },
@@ -47,6 +49,7 @@ export default function OnboardingPage() {
     activityLevel: '',
     healthGoal: [],
     dietaryPreference: '',
+    region: '',
     foodAllergies: '',
     mealTiming: '',
     medicalConditions: '',
@@ -125,6 +128,7 @@ export default function OnboardingPage() {
         activityLevel: data.activityLevel,
         healthGoals: data.healthGoal,
         dietaryPreference: data.dietaryPreference,
+        region: data.region || 'Other',
         foodAllergies: data.foodAllergies || 'None',
         mealTiming: data.mealTiming || 'Standard (3 meals)',
         medicalConditions: data.medicalConditions || 'None',
@@ -334,6 +338,24 @@ export default function OnboardingPage() {
                     }`}
                   >
                     {option}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {step.id === 'region' && (
+              <div className="grid grid-cols-2 gap-3">
+                {['Maharashtrian', 'South Indian', 'North Indian', 'Bengali', 'Gujarati', 'Other'].map(region => (
+                  <button
+                    key={region}
+                    onClick={() => setData(p => ({...p, region}))}
+                    className={`p-4 rounded-lg border-2 transition-colors text-left font-medium ${
+                      data.region === region
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+                        : 'border-slate-200 bg-slate-50 text-slate-900 hover:border-slate-300'
+                    }`}
+                  >
+                    {region}
                   </button>
                 ))}
               </div>
